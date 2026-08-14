@@ -3,6 +3,16 @@
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et du [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [0.6.0] - 2026-08-14
+
+### Modifié
+
+- **Analyses avancées : le contexte de la source est conservé.** Le bouton
+  « Analyses avancées… » ouvre désormais `/photo?source=<morfPhoto sélectionné>` :
+  morfAnalytics ouvre directement les analyses de la MÊME photothèque que celle en
+  cours dans PhotoHub, sans redemander la source. L'URL est construite au clic à
+  partir de l'instance morfPhoto active.
+
 ## [0.5.0] - 2026-08-13
 
 ### Ajouté

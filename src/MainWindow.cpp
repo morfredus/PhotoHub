@@ -669,10 +669,12 @@ void MainWindow::onSourcesChanged() {
     }
 
     // Enrichissement optionnel : bouton vers morfAnalytics si sa capacité est là.
+    // On mémorise sa base ; l'URL finale est construite au clic pour y joindre la
+    // source morfPhoto ACTUELLEMENT sélectionnée (le contexte est ainsi conservé).
     const QList<ServiceInfo> analytics = m_discovery->withCapability(QLatin1String(kCapAnalytics));
     m_analyticsBtn->setVisible(!analytics.isEmpty());
     if (!analytics.isEmpty())
-        m_analyticsBtn->setProperty("url", analytics.first().baseUrl() + QStringLiteral("/photo"));
+        m_analyticsBtn->setProperty("base", analytics.first().baseUrl());
 }
 
 void MainWindow::onSourceSelected(int index) {
@@ -970,9 +972,17 @@ void MainWindow::showRemovedFoldersDialog() {
 }
 
 void MainWindow::openAnalyticsClicked() {
-    const QString url = m_analyticsBtn->property("url").toString();
-    if (!url.isEmpty())
-        QDesktopServices::openUrl(QUrl(url));
+    const QString base = m_analyticsBtn->property("base").toString();
+    if (base.isEmpty())
+        return;
+    // Conserver le contexte : ouvrir les analyses de la MÊME photothèque que celle
+    // sélectionnée dans PhotoHub, sans redemander la source. morfAnalytics lit ce
+    // paramètre `source` et rapatrie cette instance morfPhoto à la demande.
+    QString url = base + QStringLiteral("/photo");
+    const QString source = m_sourceCombo->currentData().toString();
+    if (!source.isEmpty())
+        url += QStringLiteral("?source=") + QString::fromUtf8(QUrl::toPercentEncoding(source));
+    QDesktopServices::openUrl(QUrl(url));
 }
 
 } // namespace photohub
