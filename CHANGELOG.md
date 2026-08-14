@@ -3,6 +3,17 @@
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et du [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [0.6.1] - 2026-08-14
+
+### Corrigé
+
+- **Analyses avancées : choix du morfAnalytics selon le morfPhoto sélectionné.** Le
+  bouton ouvrait toujours le premier morfAnalytics entendu, quel que soit le morfPhoto
+  choisi. Il vise désormais l'instance morfAnalytics du **même hôte** que le morfPhoto
+  sélectionné (parc multi-machines : chaque machine a son couple morfPhoto/morfAnalytics,
+  l'analyse reste locale à sa source). À défaut d'instance co-localisée, repli sur la
+  première entendue, le paramètre `source` garantissant l'analyse de la bonne photothèque.
+
 ## [0.6.0] - 2026-08-14
 
 ### Modifié

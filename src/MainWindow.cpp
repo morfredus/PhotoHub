@@ -668,13 +668,12 @@ void MainWindow::onSourcesChanged() {
         onSourceSelected(0);
     }
 
-    // Enrichissement optionnel : bouton vers morfAnalytics si sa capacité est là.
-    // On mémorise sa base ; l'URL finale est construite au clic pour y joindre la
-    // source morfPhoto ACTUELLEMENT sélectionnée (le contexte est ainsi conservé).
+    // Enrichissement optionnel : bouton vers morfAnalytics si au moins une instance
+    // annonce la capacité. L'instance CIBLE et l'URL finale sont choisies au clic,
+    // en fonction du morfPhoto sélectionné (voir openAnalyticsClicked) : le contexte
+    // et l'hôte sont ainsi conservés même quand plusieurs machines du parc tournent.
     const QList<ServiceInfo> analytics = m_discovery->withCapability(QLatin1String(kCapAnalytics));
     m_analyticsBtn->setVisible(!analytics.isEmpty());
-    if (!analytics.isEmpty())
-        m_analyticsBtn->setProperty("base", analytics.first().baseUrl());
 }
 
 void MainWindow::onSourceSelected(int index) {
@@ -972,14 +971,31 @@ void MainWindow::showRemovedFoldersDialog() {
 }
 
 void MainWindow::openAnalyticsClicked() {
-    const QString base = m_analyticsBtn->property("base").toString();
-    if (base.isEmpty())
+    const QList<ServiceInfo> analytics = m_discovery->withCapability(QLatin1String(kCapAnalytics));
+    if (analytics.isEmpty())
         return;
-    // Conserver le contexte : ouvrir les analyses de la MÊME photothèque que celle
-    // sélectionnée dans PhotoHub, sans redemander la source. morfAnalytics lit ce
-    // paramètre `source` et rapatrie cette instance morfPhoto à la demande.
-    QString url = base + QStringLiteral("/photo");
+
+    // morfPhoto sélectionné : c'est LUI qui décide vers quel morfAnalytics aller.
     const QString source = m_sourceCombo->currentData().toString();
+    const QString sourceHost = QUrl(source).host();
+
+    // Choisir le morfAnalytics du MÊME hôte que le morfPhoto sélectionné : sur un
+    // parc multi-machines (p. ex. pi4fred et un autre hôte), chaque machine a son
+    // couple morfPhoto/morfAnalytics, et l'analyse doit rester locale à sa source.
+    // À défaut d'instance co-localisée, on retombe sur la première entendue : le
+    // paramètre `source` ci-dessous garantit qu'elle analysera quand même la bonne
+    // photothèque (morfAnalytics sait la rapatrier à la demande).
+    ServiceInfo target = analytics.first();
+    for (const ServiceInfo& a : analytics) {
+        if (!sourceHost.isEmpty() && (a.ip == sourceHost || a.host == sourceHost)) {
+            target = a;
+            break;
+        }
+    }
+
+    // Conserver le contexte : ouvrir les analyses de la MÊME photothèque, sans
+    // redemander la source. morfAnalytics lit `source` et rapatrie cette instance.
+    QString url = target.baseUrl() + QStringLiteral("/photo");
     if (!source.isEmpty())
         url += QStringLiteral("?source=") + QString::fromUtf8(QUrl::toPercentEncoding(source));
     QDesktopServices::openUrl(QUrl(url));
