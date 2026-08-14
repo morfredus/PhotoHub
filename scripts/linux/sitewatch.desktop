@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=PhotoHub
+GenericName=Gestion de photothèque
+GenericName[en]=Photo Library Management
+Comment=Client de morfPhoto pour gérer les dossiers surveillés et l'indexation de la photothèque
+Comment[en]=morfPhoto client for managing watched folders and photo library indexing
+Exec=PhotoHub
+Icon=PhotoHub
+Terminal=false
+Categories=Graphics;Photography;Utility;
+Keywords=photo;photographie;photothèque;morfPhoto;indexation;EXIF;métadonnées;
+Keywords[en]=photo;photography;library;morfPhoto;indexing;EXIF;metadata;
+StartupNotify=true
+StartupWMClass=PhotoHub
