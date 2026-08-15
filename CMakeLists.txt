@@ -29,6 +29,11 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Network)
 # depot morfUpdate ; resync via scripts/sync-morf). Coeur + couche Widgets.
 add_subdirectory(third_party/morf/update)
 
+# morfBeacon : annonce de presence sur le LAN (heartbeat UDP + /status), comme
+# ComponentHub et SiteWatch. Bibliotheque vendoree dans third_party/morf/beacon
+# (source de verite : depot morfBeacon ; resync via scripts/sync-morf).
+add_subdirectory(third_party/morf/beacon)
+
 # Ressources : icone Qt (fenetre) + .rc Windows (icone de l'exe).
 set(APP_RESOURCES resources/app.qrc)
 if(WIN32)
@@ -49,7 +54,8 @@ add_executable(PhotoHub WIN32
 
 target_link_libraries(PhotoHub PRIVATE
     Qt6::Widgets Qt6::Network
-    morfUpdate::morfUpdate morfUpdate::Widgets)
+    morfUpdate::morfUpdate morfUpdate::Widgets
+    morfBeacon::morfBeacon)
 target_compile_definitions(PhotoHub PRIVATE PHOTOHUB_VERSION="${PROJECT_VERSION}")
 
 if(WIN32)

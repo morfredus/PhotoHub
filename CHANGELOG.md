@@ -3,6 +3,19 @@
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et du [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [0.6.3] - 2026-08-15
+
+### Ajouté
+
+- **Annonce de présence sur morfBeacon**, comme ComponentHub et SiteWatch. PhotoHub
+  reste un client (il découvre morfPhoto par capacité), mais se rend désormais visible
+  dans la carte de l'écosystème : heartbeat UDP `morfbeacon/1` + endpoint `/status`
+  (et `/healthz`) via `morfbeacon::PresenceService`, sur le port **8882** de l'`appRange`
+  (réservé dans `morfTools/ecosystem.json`, hors du bloc des services). L'application
+  apparaît quand elle est ouverte et passe « hors ligne » à sa fermeture. Capacité
+  annoncée : `photo_client`. Bibliothèque **morfBeacon** vendorée dans
+  `third_party/morf/beacon` (0.6.1, alignée sur la source).
+
 ## [0.6.2] - 2026-08-15
 
 ### Modifié
