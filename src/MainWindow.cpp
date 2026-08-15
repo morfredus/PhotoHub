@@ -23,6 +23,8 @@
 #include <QLineEdit>
 #include <QDialogButtonBox>
 #include <QFileDialog>
+#include <QFileInfo>
+#include <QLocale>
 #include <QMessageBox>
 #include <QStatusBar>
 #include <QMenuBar>
@@ -733,8 +735,32 @@ void MainWindow::onIndexStatus(const QJsonObject& status) {
     const bool indexing = status.value(QStringLiteral("state")).toString() == QLatin1String("indexing");
     m_progress->setVisible(indexing);
     if (indexing) {
-        m_progress->setRange(0, 0);   // barre indéterminée
-        m_indexLabel->setText(QStringLiteral("Indexation en cours…"));
+        // Progression exposée par morfPhoto : le nombre de dossiers donne une barre
+        // DÉTERMINÉE (dénominateur fiable, connu d'avance) ; le compteur de fichiers
+        // matérialise l'avancée à l'intérieur d'un gros dossier. À défaut (morfPhoto
+        // plus ancien, ou tout début de passe), on retombe sur la barre indéterminée.
+        const QJsonObject prog = status.value(QStringLiteral("progress")).toObject();
+        const int total = prog.value(QStringLiteral("folders_total")).toInt();
+        const int done  = prog.value(QStringLiteral("folders_done")).toInt();
+
+        if (total > 0) {
+            m_progress->setRange(0, total);
+            m_progress->setValue(done);
+        } else {
+            m_progress->setRange(0, 0);   // indéterminée tant que rien n'est connu
+        }
+
+        const qint64 files = static_cast<qint64>(prog.value(QStringLiteral("files_seen")).toDouble());
+        const QString folder = prog.value(QStringLiteral("current_folder")).toString();
+        QString txt;
+        if (total > 0)
+            txt = QStringLiteral("Indexation… dossier %1/%2 · %3 fichiers")
+                      .arg(done).arg(total).arg(QLocale().toString(files));
+        else
+            txt = QStringLiteral("Indexation en cours…");
+        if (!folder.isEmpty())
+            txt += QStringLiteral(" · %1").arg(QFileInfo(folder).fileName());
+        m_indexLabel->setText(txt);
         return;
     }
     const QJsonObject run = status.value(QStringLiteral("last_run")).toObject();

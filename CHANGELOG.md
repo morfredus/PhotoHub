@@ -3,6 +3,17 @@
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et du [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [0.6.2] - 2026-08-15
+
+### Modifié
+
+- **Barre de progression d'indexation déterminée.** Elle tournait en boucle
+  (indéterminée, « Indexation en cours… ») faute de données. Elle reflète désormais la
+  progression exposée par morfPhoto 0.5.3 : barre remplie selon les dossiers traités
+  (`folders_done` / `folders_total`) et libellé « Indexation… dossier X/N · M fichiers ·
+  <dossier courant> ». Repli propre sur l'ancienne barre indéterminée si morfPhoto ne
+  fournit pas encore la progression (compatibilité descendante).
+
 ## [0.6.1] - 2026-08-14
 
 ### Corrigé
