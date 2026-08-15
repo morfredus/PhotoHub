@@ -3,6 +3,16 @@
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et du [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [0.6.4] - 2026-08-15
+
+### Ajouté
+
+- **Cadence de l'indexation automatique affichée.** Sous le résumé de la dernière
+  passe, PhotoHub indique maintenant si l'indexation de fond est active et à quelle
+  fréquence (« auto : une fois par jour ») ou si elle est désactivée (« auto désactivée
+  (à la demande) »), d'après le nouveau champ `watch` de morfPhoto 0.5.4. Le bouton
+  d'indexation à la demande reste la voie manuelle pour prendre les ajouts tout de suite.
+
 ## [0.6.3] - 2026-08-15
 
 ### Ajouté

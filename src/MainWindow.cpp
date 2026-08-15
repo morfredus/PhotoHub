@@ -763,18 +763,40 @@ void MainWindow::onIndexStatus(const QJsonObject& status) {
         m_indexLabel->setText(txt);
         return;
     }
+    // Cadence de l'indexation automatique (exposée par morfPhoto). Utile pour voir
+    // d'un coup d'œil si une passe de fond tourne, et à quelle fréquence, ou si tout
+    // se fait à la demande. Le bouton « indexer les changements » reste la voie manuelle.
+    const QJsonObject watch = status.value(QStringLiteral("watch")).toObject();
+    QString autoTxt;
+    if (watch.contains(QStringLiteral("auto"))) {
+        if (!watch.value(QStringLiteral("auto")).toBool()) {
+            autoTxt = QStringLiteral("  ·  auto désactivée (à la demande)");
+        } else {
+            const qint64 ms = static_cast<qint64>(watch.value(QStringLiteral("interval_ms")).toDouble());
+            QString every;
+            if (ms % 86400000 == 0)
+                every = (ms / 86400000 == 1) ? QStringLiteral("une fois par jour")
+                                             : QStringLiteral("tous les %1 jours").arg(ms / 86400000);
+            else if (ms % 3600000 == 0) every = QStringLiteral("toutes les %1 h").arg(ms / 3600000);
+            else if (ms % 60000 == 0)   every = QStringLiteral("toutes les %1 min").arg(ms / 60000);
+            else                        every = QStringLiteral("toutes les %1 s").arg(ms / 1000);
+            autoTxt = QStringLiteral("  ·  auto : %1").arg(every);
+        }
+    }
+
     const QJsonObject run = status.value(QStringLiteral("last_run")).toObject();
     if (run.isEmpty()) {
-        m_indexLabel->setText(QStringLiteral("Aucune indexation encore exécutée."));
+        m_indexLabel->setText(QStringLiteral("Aucune indexation encore exécutée.%1").arg(autoTxt));
         return;
     }
     m_indexLabel->setText(QStringLiteral(
-        "Dernière passe (%1) : %2 nouveaux · %3 modifiés · %4 disparus · %5 erreurs")
+        "Dernière passe (%1) : %2 nouveaux · %3 modifiés · %4 disparus · %5 erreurs%6")
         .arg(run.value(QStringLiteral("mode")).toString())
         .arg(run.value(QStringLiteral("files_new")).toInt())
         .arg(run.value(QStringLiteral("files_updated")).toInt())
         .arg(run.value(QStringLiteral("files_missing")).toInt())
-        .arg(run.value(QStringLiteral("errors_count")).toInt()));
+        .arg(run.value(QStringLiteral("errors_count")).toInt())
+        .arg(autoTxt));
 }
 
 void MainWindow::onActionResult(bool ok, const QString& message) {
