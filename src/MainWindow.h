@@ -60,6 +60,9 @@ private slots:
     void addFolderClicked();
     void toggleFolderClicked();
     void removeFolderClicked();
+    void editMediaClicked();                 // Support amovible : drapeau + libellé de volume
+    void toggleAnalyticsExclusionClicked();  // Exclure / réintégrer des analyses
+    void showPurgeDialog();                  // Supprimer des données (définitif, sélectif ou total)
     void showRemovedFoldersDialog();         // Fichier > Dossiers retirés...
     void openAnalyticsClicked();
     void showMappingsDialog();               // Fichier > Mappage de chemins...
@@ -71,6 +74,12 @@ private:
     void buildUi();
     void buildMenu();
     int  selectedFolderId(bool* enabled = nullptr) const;
+    // Objet JSON complet de la sélection courante (vide si aucune ligne choisie).
+    QJsonObject selectedFolder() const;
+    // Construit et exécute le dialogue de suppression, une fois années et boîtiers
+    // récupérés auprès de morfPhoto (pour proposer des choix pré-remplis).
+    void buildPurgeDialog(const QJsonObject& selectedFolder, const QJsonArray& years,
+                          const QJsonArray& cameras);
 
     // Charge / sauvegarde les mappages depuis QSettings.
     void loadMappings();
@@ -105,6 +114,9 @@ private:
     QPushButton*  m_addBtn;
     QPushButton*  m_toggleBtn;
     QPushButton*  m_removeBtn;
+    QPushButton*  m_mediaBtn;         // Support amovible…
+    QPushButton*  m_analyticsExclBtn; // Exclure / réintégrer des analyses
+    QPushButton*  m_purgeBtn;         // Supprimer des données…
     QPushButton*  m_indexIncrBtn;
     QPushButton*  m_indexFullBtn;
     QPushButton*  m_analyticsBtn;

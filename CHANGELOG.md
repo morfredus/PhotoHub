@@ -3,6 +3,27 @@
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et du [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [0.7.0] - 2026-08-17
+
+### Ajouté
+
+- **Gestion des supports amovibles (CD/DVD, disques d'archive).** À l'ajout d'un
+  dossier, une case « Support amovible » et un champ « Nom du support » (ex.
+  `PHOTOS-2015`) déclarent une archive : morfPhoto ne marquera jamais ses photos
+  disparues quand le disque est absent (elles restent dans les analyses, support
+  éjecté et après un redémarrage). Un bouton **« Support amovible… »** permet de régler
+  ce statut après coup. La table des dossiers gagne une colonne **« Support / Analyses »**
+  (Fixe / Amovible « volume » / hors analyses). S'appuie sur morfPhoto 0.6.0.
+- **Exclure un dossier des analyses sans perdre ses données.** Bouton
+  **« Exclure des analyses » / « Réintégrer aux analyses »** : les photos restent
+  indexées et consultables, seules les analyses de morfAnalytics les ignorent. Geste
+  réversible, clairement distinct de la suppression.
+- **Supprimer des données (définitif).** Bouton **« Supprimer des données… »** :
+  suppression irréversible par dossier sélectionné, par année, par boîtier, ou totale
+  (remise à zéro). Choix pré-remplis (années et boîtiers connus), double confirmation
+  et saisie de `SUPPRIMER` exigée pour la remise à zéro complète. Les fichiers d'origine
+  sur le disque ou le CD ne sont jamais touchés.
+
 ## [0.6.4] - 2026-08-15
 
 ### Ajouté

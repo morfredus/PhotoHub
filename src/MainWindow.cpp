@@ -22,6 +22,9 @@
 #include <QDialog>
 #include <QLineEdit>
 #include <QDialogButtonBox>
+#include <QCheckBox>
+#include <QRadioButton>
+#include <QButtonGroup>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QLocale>
@@ -60,6 +63,22 @@ QString folderState(const QJsonObject& f) {
     if (f.value(QStringLiteral("auto_disabled")).toInt() == 1)
         return QStringLiteral("Inactif (racine absente)");
     return QStringLiteral("Inactif");
+}
+
+// Colonne « Support / Analyses » : type de support (fixe ou amovible + nom de
+// volume) et, le cas échéant, la mention d'exclusion des analyses.
+QString folderSupport(const QJsonObject& f) {
+    QString s;
+    if (f.value(QStringLiteral("removable")).toInt() == 1) {
+        const QString vol = f.value(QStringLiteral("volume_label")).toString();
+        s = vol.isEmpty() ? QStringLiteral("Amovible")
+                          : QStringLiteral("Amovible « %1 »").arg(vol);
+    } else {
+        s = QStringLiteral("Fixe");
+    }
+    if (f.value(QStringLiteral("analytics_excluded")).toInt() == 1)
+        s += QStringLiteral("  ·  hors analyses");
+    return s;
 }
 } // namespace
 
@@ -150,11 +169,13 @@ void MainWindow::buildUi() {
     // --- Dossiers ---
     auto* folders = new QGroupBox(QStringLiteral("Dossiers surveillés"));
     auto* fLayout = new QVBoxLayout(folders);
-    m_foldersTable = new QTableWidget(0, 2);
-    m_foldersTable->setHorizontalHeaderLabels({QStringLiteral("Dossier"), QStringLiteral("État")});
+    m_foldersTable = new QTableWidget(0, 3);
+    m_foldersTable->setHorizontalHeaderLabels(
+        {QStringLiteral("Dossier"), QStringLiteral("État"), QStringLiteral("Support / Analyses")});
     m_foldersTable->horizontalHeader()->setStretchLastSection(false);
     m_foldersTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     m_foldersTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    m_foldersTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
     m_foldersTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_foldersTable->setSelectionMode(QAbstractItemView::SingleSelection);
     m_foldersTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -162,11 +183,17 @@ void MainWindow::buildUi() {
     auto* fBtns = new QHBoxLayout;
     m_addBtn    = new QPushButton(QStringLiteral("Ajouter un dossier…"));
     m_toggleBtn = new QPushButton(QStringLiteral("Activer / Désactiver"));
+    m_mediaBtn  = new QPushButton(QStringLiteral("Support amovible…"));
+    m_analyticsExclBtn = new QPushButton(QStringLiteral("Exclure des analyses"));
     m_removeBtn = new QPushButton(QStringLiteral("Retirer"));
+    m_purgeBtn  = new QPushButton(QStringLiteral("Supprimer des données…"));
     fBtns->addWidget(m_addBtn);
     fBtns->addWidget(m_toggleBtn);
+    fBtns->addWidget(m_mediaBtn);
+    fBtns->addWidget(m_analyticsExclBtn);
     fBtns->addWidget(m_removeBtn);
     fBtns->addStretch(1);
+    fBtns->addWidget(m_purgeBtn);
     fLayout->addLayout(fBtns);
     m_rootsLabel = new QLabel(QStringLiteral("Racines autorisées : —"));
     m_rootsLabel->setWordWrap(true);
@@ -175,7 +202,17 @@ void MainWindow::buildUi() {
     root->addWidget(folders, 1);
     connect(m_addBtn, &QPushButton::clicked, this, &MainWindow::addFolderClicked);
     connect(m_toggleBtn, &QPushButton::clicked, this, &MainWindow::toggleFolderClicked);
+    connect(m_mediaBtn, &QPushButton::clicked, this, &MainWindow::editMediaClicked);
+    connect(m_analyticsExclBtn, &QPushButton::clicked, this, &MainWindow::toggleAnalyticsExclusionClicked);
     connect(m_removeBtn, &QPushButton::clicked, this, &MainWindow::removeFolderClicked);
+    connect(m_purgeBtn, &QPushButton::clicked, this, &MainWindow::showPurgeDialog);
+    // Le libellé du bouton d'exclusion suit la sélection : « Exclure » ou « Réintégrer ».
+    connect(m_foldersTable, &QTableWidget::itemSelectionChanged, this, [this]() {
+        const QJsonObject f = selectedFolder();
+        const bool excluded = f.value(QStringLiteral("analytics_excluded")).toInt() == 1;
+        m_analyticsExclBtn->setText(excluded ? QStringLiteral("Réintégrer aux analyses")
+                                             : QStringLiteral("Exclure des analyses"));
+    });
 
     // --- Indexation ---
     auto* index = new QGroupBox(QStringLiteral("Indexation"));
@@ -719,6 +756,7 @@ void MainWindow::onFolders(const QJsonArray& folders) {
         const QJsonObject f = m_folders[i].toObject();
         m_foldersTable->setItem(i, 0, new QTableWidgetItem(f.value(QStringLiteral("path")).toString()));
         m_foldersTable->setItem(i, 1, new QTableWidgetItem(folderState(f)));
+        m_foldersTable->setItem(i, 2, new QTableWidgetItem(folderSupport(f)));
     }
 
     // Refléter le nombre de retirés dans l'entrée de menu (grisée si aucun).
@@ -831,6 +869,13 @@ int MainWindow::selectedFolderId(bool* enabled) const {
     return f.value(QStringLiteral("id")).toInt();
 }
 
+QJsonObject MainWindow::selectedFolder() const {
+    const int row = m_foldersTable->currentRow();
+    if (row < 0 || row >= m_folders.size())
+        return {};
+    return m_folders[row].toObject();
+}
+
 // -----------------------------------------------------------------------------
 // addFolderClicked
 //
@@ -912,6 +957,28 @@ void MainWindow::addFolderClicked() {
     rootsInfo->setWordWrap(true);
     layout->addWidget(rootsInfo);
 
+    // --- Support amovible (CD/DVD, disque d'archive) ---
+    // Un support qu'on retire (CD gravé rangé sur une étagère) : morfPhoto NE marque
+    // JAMAIS ses photos disparues quand le support est absent, elles restent dans la
+    // base et donc dans morfAnalytics, support éjecté et même après un redémarrage.
+    auto* removableChk = new QCheckBox(QStringLiteral("Support amovible (CD/DVD, disque d'archive)"));
+    layout->addWidget(removableChk);
+    auto* removableHint = new QLabel(
+        QStringLiteral("Ne jamais marquer ses photos disparues quand le support est absent : "
+                       "l'archive reste dans la base et dans les analyses, support éjecté."));
+    removableHint->setWordWrap(true);
+    removableHint->setStyleSheet(QStringLiteral("color:#99a1ad;"));
+    layout->addWidget(removableHint);
+
+    auto* volRow = new QHBoxLayout;
+    volRow->addWidget(new QLabel(QStringLiteral("Nom du support :")));
+    auto* volEdit = new QLineEdit;
+    volEdit->setPlaceholderText(QStringLiteral("ex. PHOTOS-2015 (pour reconnaître le disque)"));
+    volEdit->setEnabled(false);   // pertinent seulement pour un support amovible
+    volRow->addWidget(volEdit, 1);
+    layout->addLayout(volRow);
+    connect(removableChk, &QCheckBox::toggled, volEdit, &QLineEdit::setEnabled);
+
     auto* btns = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     btns->button(QDialogButtonBox::Ok)->setText(QStringLiteral("Ajouter"));
     connect(btns, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
@@ -928,7 +995,8 @@ void MainWindow::addFolderClicked() {
     // morfPhoto est l'autorité finale : il valide le périmètre, l'existence du
     // dossier côté serveur et les droits. Le message d'erreur éventuel remonte
     // tel quel via onActionResult.
-    m_client->addFolder(dir);
+    const bool removable = removableChk->isChecked();
+    m_client->addFolder(dir, removable, removable ? volEdit->text().trimmed() : QString());
 }
 
 void MainWindow::toggleFolderClicked() {
@@ -947,6 +1015,228 @@ void MainWindow::removeFolderClicked() {
                        "marqués absents, jamais supprimés."));
     if (answer == QMessageBox::Yes)
         m_client->removeFolder(id);
+}
+
+// -----------------------------------------------------------------------------
+// editMediaClicked
+//
+// Régler APRÈS COUP le caractère amovible d'une sélection et le nom de son volume :
+// un dossier ordinaire déclaré trop vite peut devenir « archive CD », ou l'inverse.
+// -----------------------------------------------------------------------------
+void MainWindow::editMediaClicked() {
+    const QJsonObject f = selectedFolder();
+    if (f.isEmpty()) { statusBar()->showMessage(QStringLiteral("Sélectionner un dossier."), 3000); return; }
+    const int id = f.value(QStringLiteral("id")).toInt();
+    const bool removableNow = f.value(QStringLiteral("removable")).toInt() == 1;
+    const QString volNow = f.value(QStringLiteral("volume_label")).toString();
+
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("Support du dossier – PhotoHub"));
+    auto* layout = new QVBoxLayout(&dlg);
+    layout->setSpacing(10);
+    layout->setContentsMargins(16, 16, 16, 16);
+
+    auto* info = new QLabel(
+        QStringLiteral("Un support amovible (CD/DVD, disque d'archive) : morfPhoto ne "
+                       "marque jamais ses photos disparues quand le support est absent. "
+                       "Elles restent dans la base et dans les analyses, support éjecté "
+                       "et même après un redémarrage."));
+    info->setWordWrap(true);
+    info->setStyleSheet(QStringLiteral("color:#99a1ad;"));
+    layout->addWidget(info);
+
+    layout->addWidget(new QLabel(QDir::toNativeSeparators(f.value(QStringLiteral("path")).toString())));
+
+    auto* removableChk = new QCheckBox(QStringLiteral("Support amovible"));
+    removableChk->setChecked(removableNow);
+    layout->addWidget(removableChk);
+
+    auto* volRow = new QHBoxLayout;
+    volRow->addWidget(new QLabel(QStringLiteral("Nom du support :")));
+    auto* volEdit = new QLineEdit(volNow);
+    volEdit->setPlaceholderText(QStringLiteral("ex. PHOTOS-2015"));
+    volEdit->setEnabled(removableNow);
+    volRow->addWidget(volEdit, 1);
+    layout->addLayout(volRow);
+    connect(removableChk, &QCheckBox::toggled, volEdit, &QLineEdit::setEnabled);
+
+    auto* btns = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    connect(btns, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(btns, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    layout->addWidget(btns);
+
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+    const bool removable = removableChk->isChecked();
+    m_client->setFolderMedia(id, removable, removable ? volEdit->text().trimmed() : QString());
+}
+
+// -----------------------------------------------------------------------------
+// toggleAnalyticsExclusionClicked
+//
+// Sortir (ou réintégrer) une sélection des analyses SANS effacer ses données. Geste
+// réversible et non destructif : les photos restent indexées, seuls les agrégats de
+// morfAnalytics les ignorent. À distinguer nettement de la suppression.
+// -----------------------------------------------------------------------------
+void MainWindow::toggleAnalyticsExclusionClicked() {
+    const QJsonObject f = selectedFolder();
+    if (f.isEmpty()) { statusBar()->showMessage(QStringLiteral("Sélectionner un dossier."), 3000); return; }
+    const int id = f.value(QStringLiteral("id")).toInt();
+    const bool excluded = f.value(QStringLiteral("analytics_excluded")).toInt() == 1;
+    m_client->setFolderAnalyticsExcluded(id, !excluded);
+}
+
+// -----------------------------------------------------------------------------
+// showPurgeDialog
+//
+// Suppression DÉFINITIVE de données côté morfPhoto (irréversible), sélective ou
+// totale. Distincte du retrait doux (qui conserve l'historique) : ici les lignes
+// sont vraiment effacées. On récupère d'abord les années et boîtiers connus pour
+// proposer des choix, puis on confronte l'utilisateur à une confirmation ferme.
+// -----------------------------------------------------------------------------
+void MainWindow::showPurgeDialog() {
+    if (!m_client->hasBase()) {
+        statusBar()->showMessage(QStringLiteral("Aucun morfPhoto sélectionné."), 4000);
+        return;
+    }
+    const QJsonObject sel = selectedFolder();
+    // Récupérer années puis boîtiers avant d'ouvrir le dialogue (choix pré-remplis).
+    m_client->fetchYears([this, sel](const QJsonArray& years) {
+        m_client->fetchCameras([this, sel, years](const QJsonArray& cameras) {
+            buildPurgeDialog(sel, years, cameras);
+        });
+    });
+}
+
+void MainWindow::buildPurgeDialog(const QJsonObject& sel, const QJsonArray& years,
+                                  const QJsonArray& cameras) {
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("Supprimer des données – PhotoHub"));
+    dlg.resize(560, 380);
+    auto* layout = new QVBoxLayout(&dlg);
+    layout->setSpacing(10);
+    layout->setContentsMargins(16, 16, 16, 16);
+
+    auto* warn = new QLabel(QStringLiteral(
+        "<span style='color:#e0534e;'><b>Suppression définitive.</b></span> Contrairement "
+        "au retrait d'un dossier (réversible, historique conservé), cette action <b>efface "
+        "réellement</b> les photos choisies de la base de morfPhoto. Les fichiers d'origine "
+        "sur le disque ou le CD ne sont pas touchés ; seules les données indexées disparaissent."));
+    warn->setWordWrap(true);
+    layout->addWidget(warn);
+
+    // Choix de la portée.
+    auto* group = new QButtonGroup(&dlg);
+    auto* rbFolder = new QRadioButton;
+    if (!sel.isEmpty())
+        rbFolder->setText(QStringLiteral("Le dossier sélectionné : %1")
+                              .arg(sel.value(QStringLiteral("path")).toString()));
+    else
+        rbFolder->setText(QStringLiteral("Le dossier sélectionné (aucun sélectionné)"));
+    rbFolder->setEnabled(!sel.isEmpty());
+    auto* rbYear   = new QRadioButton(QStringLiteral("Une année de prise de vue :"));
+    auto* rbCamera = new QRadioButton(QStringLiteral("Un boîtier :"));
+    auto* rbAll    = new QRadioButton(QStringLiteral("Toutes les données (remise à zéro complète)"));
+    group->addButton(rbFolder); group->addButton(rbYear);
+    group->addButton(rbCamera); group->addButton(rbAll);
+
+    // Année : liste déroulante des années connues.
+    auto* yearCombo = new QComboBox;
+    for (const QJsonValue& v : years) {
+        const QJsonObject o = v.toObject();
+        const int y = o.value(QStringLiteral("year")).toInt();
+        const int c = o.value(QStringLiteral("count")).toInt();
+        yearCombo->addItem(QStringLiteral("%1  (%2 photos)").arg(y).arg(c), y);
+    }
+    yearCombo->setEnabled(false);
+
+    // Boîtier : liste déroulante des boîtiers connus.
+    auto* cameraCombo = new QComboBox;
+    for (const QJsonValue& v : cameras) {
+        const QJsonObject o = v.toObject();
+        const QString cam = o.value(QStringLiteral("camera")).toString();
+        const int c = o.value(QStringLiteral("count")).toInt();
+        cameraCombo->addItem(QStringLiteral("%1  (%2 photos)").arg(cam).arg(c), cam);
+    }
+    cameraCombo->setEnabled(false);
+
+    layout->addWidget(rbFolder);
+    auto* yearRow = new QHBoxLayout;
+    yearRow->addWidget(rbYear);
+    yearRow->addWidget(yearCombo, 1);
+    layout->addLayout(yearRow);
+    auto* camRow = new QHBoxLayout;
+    camRow->addWidget(rbCamera);
+    camRow->addWidget(cameraCombo, 1);
+    layout->addLayout(camRow);
+    layout->addWidget(rbAll);
+
+    // Confirmation ferme pour la remise à zéro totale : saisir SUPPRIMER.
+    auto* confirmRow = new QHBoxLayout;
+    auto* confirmLabel = new QLabel(QStringLiteral("Pour tout supprimer, saisir SUPPRIMER :"));
+    auto* confirmEdit = new QLineEdit;
+    confirmEdit->setEnabled(false);
+    confirmRow->addWidget(confirmLabel);
+    confirmRow->addWidget(confirmEdit, 1);
+    layout->addLayout(confirmRow);
+
+    layout->addStretch(1);
+
+    auto* btns = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    auto* okBtn = btns->button(QDialogButtonBox::Ok);
+    okBtn->setText(QStringLiteral("Supprimer définitivement"));
+    okBtn->setEnabled(false);
+    layout->addWidget(btns);
+
+    // Active les contrôles liés à la portée choisie et la garde de validité de l'OK.
+    const auto refresh = [&]() {
+        yearCombo->setEnabled(rbYear->isChecked());
+        cameraCombo->setEnabled(rbCamera->isChecked());
+        confirmEdit->setEnabled(rbAll->isChecked());
+        bool ready = false;
+        if (rbFolder->isChecked() && !sel.isEmpty()) ready = true;
+        else if (rbYear->isChecked() && yearCombo->count() > 0) ready = true;
+        else if (rbCamera->isChecked() && cameraCombo->count() > 0) ready = true;
+        else if (rbAll->isChecked()) ready = (confirmEdit->text() == QLatin1String("SUPPRIMER"));
+        okBtn->setEnabled(ready);
+    };
+    connect(rbFolder, &QRadioButton::toggled, &dlg, [refresh]() { refresh(); });
+    connect(rbYear,   &QRadioButton::toggled, &dlg, [refresh]() { refresh(); });
+    connect(rbCamera, &QRadioButton::toggled, &dlg, [refresh]() { refresh(); });
+    connect(rbAll,    &QRadioButton::toggled, &dlg, [refresh]() { refresh(); });
+    connect(confirmEdit, &QLineEdit::textChanged, &dlg, [refresh]() { refresh(); });
+    connect(btns, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(btns, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+
+    // Dernier garde-fou explicite avant le geste irréversible.
+    QString what;
+    QString scope;
+    QVariant value;
+    if (rbFolder->isChecked()) {
+        scope = QStringLiteral("folder");
+        value = sel.value(QStringLiteral("id")).toInt();
+        what = QStringLiteral("le dossier « %1 »").arg(sel.value(QStringLiteral("path")).toString());
+    } else if (rbYear->isChecked()) {
+        scope = QStringLiteral("year");
+        value = yearCombo->currentData().toInt();
+        what = QStringLiteral("l'année %1").arg(yearCombo->currentData().toInt());
+    } else if (rbCamera->isChecked()) {
+        scope = QStringLiteral("camera");
+        value = cameraCombo->currentData().toString();
+        what = QStringLiteral("le boîtier « %1 »").arg(cameraCombo->currentData().toString());
+    } else {
+        scope = QStringLiteral("all");
+        what = QStringLiteral("TOUTES les données photo");
+    }
+    const auto answer = QMessageBox::warning(this, QStringLiteral("Suppression définitive"),
+        QStringLiteral("Supprimer définitivement %1 de morfPhoto ?\n\n"
+                       "Cette action est irréversible.").arg(what),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (answer == QMessageBox::Yes)
+        m_client->purge(scope, value);
 }
 
 // -----------------------------------------------------------------------------

@@ -10,6 +10,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QVariant>
 #include <functional>
 
 class QNetworkAccessManager;
@@ -34,11 +35,24 @@ public:
     bool hasBase() const { return !m_base.isEmpty(); }
 
     void refreshAll();                                 // resume + dossiers + etat d'index
-    void addFolder(const QString& path);
+    // Ajoute une selection. `removable` : support amovible (CD/DVD, archive) dont
+    // l'absence ne vaudra jamais suppression ; `volumeLabel` : nom du support (vide = aucun).
+    void addFolder(const QString& path, bool removable = false, const QString& volumeLabel = {});
     void setFolderEnabled(int folderId, bool enabled);
+    // Regle le support amovible d'une selection (drapeau + libelle de volume).
+    void setFolderMedia(int folderId, bool removable, const QString& volumeLabel);
+    // Sort/reintegre une selection des analyses sans effacer ses donnees.
+    void setFolderAnalyticsExcluded(int folderId, bool excluded);
     void removeFolder(int folderId);
     void restoreFolder(int folderId);                  // annule un retrait doux
     void triggerIndex(const QString& mode);            // "incremental" | "full"
+
+    // Purge DEFINITIVE (irreversible) selon une portee : scope = "folder" (value =
+    // id), "year" (value = annee), "camera" (value = nom), "all" (value ignoree).
+    void purge(const QString& scope, const QVariant& value);
+    // Recuperations ponctuelles pour peupler le dialogue de suppression selective.
+    void fetchYears(std::function<void(const QJsonArray&)> cb);
+    void fetchCameras(std::function<void(const QJsonArray&)> cb);
 
 signals:
     void summaryReady(const QJsonObject& summary);
