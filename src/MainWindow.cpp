@@ -26,6 +26,9 @@
 #include <QRadioButton>
 #include <QButtonGroup>
 #include <QFileDialog>
+#include <QListView>
+#include <QTreeView>
+#include <QAbstractItemView>
 #include <QFileInfo>
 #include <QLocale>
 #include <QMessageBox>
@@ -474,8 +477,8 @@ void MainWindow::showNetworkAccessDialog() {
     if (m_pathMappings.isEmpty()) {
         const auto answer = QMessageBox::question(this, QStringLiteral("Assistant d'accès réseau"),
             QStringLiteral("Aucun mappage de chemins n'est configuré.\n\n"
-                           "L'assistant part d'un mappage (dossier local Windows → point de "
-                           "montage Linux) pour préparer le partage et les commandes.\n\n"
+                           "L'assistant part d'un mappage (dossier local ↔ chemin vu par "
+                           "morfPhoto) pour préparer le partage et les commandes.\n\n"
                            "Ouvrir maintenant « Mappage de chemins… » ?"));
         if (answer == QMessageBox::Yes)
             showMappingsDialog();
@@ -494,10 +497,10 @@ void MainWindow::showNetworkAccessDialog() {
     const QString user = detectWindowsUser();
 
     auto* intro = new QLabel(QStringLiteral(
-        "Cet assistant partage vos photos <b>en lecture seule</b> pour que morfPhoto "
-        "(sur le Raspberry Pi) puisse les indexer <b>sans jamais les déplacer ni les "
-        "modifier</b>. Deux étapes : créer le partage sur ce PC, puis monter le dossier "
-        "sur le Pi."));
+        "Cet assistant prépare l'accès de morfPhoto à vos photos, <b>en lecture seule</b> "
+        "(morfPhoto ne déplace ni ne modifie jamais vos fichiers). morfPhoto peut tourner "
+        "sur un serveur Linux (Raspberry Pi ou autre), sur ce PC, ou sur un autre PC "
+        "Windows : <b>choisissez la situation</b>, les étapes s'adaptent."));
     intro->setWordWrap(true);
     layout->addWidget(intro);
 
@@ -509,7 +512,19 @@ void MainWindow::showNetworkAccessDialog() {
     detected->setStyleSheet(QStringLiteral("color:#99a1ad;"));
     layout->addWidget(detected);
 
-    // Choix du mappage à préparer (dossier local ↔ montage serveur).
+    // Où tourne morfPhoto ? Le choix commande toute la suite : partage + montage
+    // réseau (serveur Linux), rien du tout (même machine), ou partage + racine UNC
+    // (autre PC Windows). Les index correspondent aux cas testés dans refresh().
+    auto* topoRow = new QHBoxLayout;
+    topoRow->addWidget(new QLabel(QStringLiteral("morfPhoto tourne sur :")));
+    auto* topoCombo = new QComboBox;
+    topoCombo->addItem(QStringLiteral("Un serveur Linux (Raspberry Pi ou autre) — photos partagées depuis ce PC"));
+    topoCombo->addItem(QStringLiteral("Ce PC Windows — morfPhoto et les photos sur la même machine"));
+    topoCombo->addItem(QStringLiteral("Un autre PC Windows — photos partagées depuis ce PC"));
+    topoRow->addWidget(topoCombo, 1);
+    layout->addLayout(topoRow);
+
+    // Choix du mappage à préparer (dossier local ↔ chemin vu par morfPhoto).
     auto* mapRow = new QHBoxLayout;
     mapRow->addWidget(new QLabel(QStringLiteral("Dossier à partager :")));
     auto* mapCombo = new QComboBox;
@@ -518,8 +533,9 @@ void MainWindow::showNetworkAccessDialog() {
     mapRow->addWidget(mapCombo, 1);
     layout->addLayout(mapRow);
 
-    // Étape 1 : commande de partage Windows.
-    layout->addWidget(new QLabel(QStringLiteral("<b>Étape 1 — sur ce PC (Windows)</b>")));
+    // Étape 1 : partage Windows (seulement quand morfPhoto est sur une AUTRE machine).
+    auto* step1Label = new QLabel(QStringLiteral("<b>Étape 1 — sur ce PC (Windows) : partager le dossier</b>"));
+    layout->addWidget(step1Label);
     auto* winCmd = new QPlainTextEdit;
     winCmd->setReadOnly(true);
     winCmd->setMaximumHeight(70);
@@ -533,15 +549,19 @@ void MainWindow::showNetworkAccessDialog() {
     winBtns->addStretch(1);
     layout->addLayout(winBtns);
 
-    // Étape 2 : commandes de montage Pi.
-    layout->addWidget(new QLabel(QStringLiteral("<b>Étape 2 — sur le Raspberry Pi (à coller dans un terminal)</b>")));
-    auto* piCmd = new QPlainTextEdit;
-    piCmd->setReadOnly(true);
-    piCmd->setFont(QFont(QStringLiteral("Consolas"), 9));
-    layout->addWidget(piCmd, 1);
-    auto* copyPiBtn = new QPushButton(QStringLiteral("Copier les commandes du Pi"));
-    layout->addWidget(copyPiBtn);
+    // Étape 2 : ce qu'il faut faire sur la machine morfPhoto (montage réseau,
+    // racine UNC, ou simple déclaration locale — selon la topologie choisie).
+    auto* step2Label = new QLabel;
+    layout->addWidget(step2Label);
+    auto* serverCmd = new QPlainTextEdit;
+    serverCmd->setReadOnly(true);
+    serverCmd->setFont(QFont(QStringLiteral("Consolas"), 9));
+    layout->addWidget(serverCmd, 1);
+    auto* copyServerBtn = new QPushButton(QStringLiteral("Copier"));
+    layout->addWidget(copyServerBtn);
 
+    // Note mot de passe : utile seulement pour un montage SMB depuis Linux (fichier
+    // d'identifiants). Masquée dans les autres cas.
     auto* note = new QLabel(QStringLiteral(
         "<span style='color:#e09000;'>Le mot de passe à mettre dans le fichier est celui "
         "de votre session Windows (compte <b>%1</b>). Si vous vous connectez avec un compte "
@@ -555,44 +575,104 @@ void MainWindow::showNetworkAccessDialog() {
     connect(btns, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
     layout->addWidget(btns);
 
-    // (Re)génère les deux blocs de commandes selon le mappage sélectionné.
+    // (Re)génère les blocs selon la topologie ET le mappage sélectionnés. Trois cas :
+    //   0 = serveur Linux : partage SMB ici + montage cifs là-bas ;
+    //   1 = ce PC : rien à partager, juste déclarer le dossier local dans roots ;
+    //   2 = autre PC Windows : partage SMB ici + racine UNC là-bas (aucun montage).
     const auto refresh = [&, this]() {
         const int i = mapCombo->currentIndex();
         if (i < 0 || i >= m_pathMappings.size())
             return;
+        const int topo = topoCombo->currentIndex();
+        const bool needShare = (topo == 0 || topo == 2);   // photos partagées depuis ce PC
+        const bool linuxMount = (topo == 0);               // montage cifs + fichier d'identifiants
+
         const QString localRoot  = m_pathMappings[i].first;
-        const QString serverRoot = m_pathMappings[i].second;
         const QString share = shareNameFor(localRoot);
-        const QString ipShown = ip.isEmpty() ? QStringLiteral("IP_DU_PC") : ip;
+        const QString ipShown   = ip.isEmpty() ? QStringLiteral("IP_DU_PC") : ip;
+        const QString pcShown   = pc.isEmpty() ? QStringLiteral("NOM_DU_PC") : pc;
         const QString userShown = user.isEmpty() ? QStringLiteral("VOTRE_COMPTE") : user;
 
-        winCmd->setPlainText(QStringLiteral(
-            "net share %1=\"%2\" /GRANT:%3,READ /REMARK:\"morfPhoto - lecture seule\"")
-            .arg(share, QDir::toNativeSeparators(localRoot), userShown));
+        // Chemin que morfPhoto verra (à mettre dans "roots") selon la topologie :
+        //   Linux  -> le point de montage du mappage (ex. /mnt/photos) ;
+        //   ce PC  -> le dossier local lui-même (slashs avant, identité) ;
+        //   autre PC Windows -> une racine UNC vers le partage de ce PC.
+        QString serverRoot;
+        if (topo == 0)      serverRoot = m_pathMappings[i].second;
+        else if (topo == 1) serverRoot = QDir::fromNativeSeparators(localRoot);
+        else                serverRoot = QStringLiteral("//%1/%2").arg(pcShown, share);
 
-        // uid/gid 1000 = user du service morfPhoto sur le Pi (morfredus).
-        piCmd->setPlainText(QStringLiteral(
-            "sudo mkdir -p %1\n"
-            "sudo tee /etc/morfsystem/smb-photos.cred >/dev/null <<'EOF'\n"
-            "username=%2\n"
-            "password=VOTRE_MOT_DE_PASSE_WINDOWS\n"
-            "EOF\n"
-            "sudo chmod 600 /etc/morfsystem/smb-photos.cred\n"
-            "sudo mount -t cifs //%3/%4 %1 -o credentials=/etc/morfsystem/smb-photos.cred,ro,uid=1000,gid=1000,iocharset=utf8,vers=3.0\n"
-            "ls %1\n"
-            "\n"
-            "# Montage permanent (au redémarrage du Pi) :\n"
-            "echo '//%3/%4 %1 cifs credentials=/etc/morfsystem/smb-photos.cred,ro,uid=1000,gid=1000,iocharset=utf8,vers=3.0,nofail,x-systemd.automount 0 0' | sudo tee -a /etc/fstab")
-            .arg(serverRoot, userShown, ipShown, share));
+        // Étape 1 (partage) : visible seulement quand morfPhoto est ailleurs.
+        step1Label->setVisible(needShare);
+        winCmd->setVisible(needShare);
+        createBtn->setVisible(needShare);
+        copyWinBtn->setVisible(needShare);
+        if (needShare)
+            winCmd->setPlainText(QStringLiteral(
+                "net share %1=\"%2\" /GRANT:%3,READ /REMARK:\"morfPhoto - lecture seule\"")
+                .arg(share, QDir::toNativeSeparators(localRoot), userShown));
+
+        // Note mot de passe : seulement pour le montage Linux (fichier d'identifiants).
+        note->setVisible(linuxMount);
+
+        if (topo == 0) {
+            // Serveur Linux : installer cifs-utils au besoin, monter en lecture seule,
+            // rendre le montage permanent, puis déclarer la racine dans morfphoto.json.
+            // uid/gid 1000 = utilisateur du service morfPhoto (à vérifier avec `id`).
+            step2Label->setText(QStringLiteral("<b>Étape 2 — sur le serveur Linux (à coller dans un terminal)</b>"));
+            serverCmd->setPlainText(QStringLiteral(
+                "# Client SMB (si absent) : sudo apt install -y cifs-utils\n"
+                "sudo mkdir -p %1\n"
+                "sudo tee /etc/morfsystem/smb-photos.cred >/dev/null <<'EOF'\n"
+                "username=%2\n"
+                "password=VOTRE_MOT_DE_PASSE_WINDOWS\n"
+                "EOF\n"
+                "sudo chmod 600 /etc/morfsystem/smb-photos.cred\n"
+                "sudo mount -t cifs //%3/%4 %1 -o credentials=/etc/morfsystem/smb-photos.cred,ro,uid=1000,gid=1000,iocharset=utf8,vers=3.0\n"
+                "ls %1\n"
+                "\n"
+                "# Montage permanent (au redémarrage) :\n"
+                "echo '//%3/%4 %1 cifs credentials=/etc/morfsystem/smb-photos.cred,ro,uid=1000,gid=1000,iocharset=utf8,vers=3.0,nofail,x-systemd.automount 0 0' | sudo tee -a /etc/fstab\n"
+                "\n"
+                "# Enfin : ajouter \"%1\" au champ \"roots\" de morfphoto.json, puis redéployer/redémarrer morfPhoto.")
+                .arg(serverRoot, userShown, ipShown, share));
+        } else if (topo == 1) {
+            // Ce PC : morfPhoto et les photos sur la même machine. Aucun partage,
+            // aucun montage : il suffit de déclarer le dossier local dans roots.
+            step2Label->setText(QStringLiteral("<b>Sur cette machine — configuration de morfPhoto</b>"));
+            serverCmd->setPlainText(QStringLiteral(
+                "# morfPhoto et les photos sont sur cette machine : aucun partage, aucun montage.\n"
+                "# Dans morfphoto.json (à côté du binaire morfPhoto), déclarez le dossier local\n"
+                "# (en slashs avant) dans \"roots\" :\n"
+                "\n"
+                "    \"roots\": [ \"%1\" ]\n"
+                "\n"
+                "# exiftool.exe doit être présent dans le PATH.\n"
+                "# Dans PhotoHub, aucun mappage n'est nécessaire (le chemin local EST le chemin serveur).")
+                .arg(serverRoot));
+        } else {
+            // Autre PC Windows : partage ici, puis racine UNC là-bas (pas de montage).
+            step2Label->setText(QStringLiteral("<b>Étape 2 — sur l'autre PC Windows — configuration de morfPhoto</b>"));
+            serverCmd->setPlainText(QStringLiteral(
+                "# morfPhoto tourne sur un autre PC Windows : aucun montage à faire.\n"
+                "# Dans son morfphoto.json (à côté du binaire morfPhoto), déclarez la racine UNC :\n"
+                "\n"
+                "    \"roots\": [ \"%1\" ]\n"
+                "\n"
+                "# Le compte qui EXÉCUTE le service morfPhoto doit avoir accès au partage \\\\%2\\%3.\n"
+                "# exiftool.exe doit être présent dans le PATH de cette machine.")
+                .arg(serverRoot, pcShown, share));
+        }
     };
+    connect(topoCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), &dlg, [refresh](int){ refresh(); });
     connect(mapCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), &dlg, [refresh](int){ refresh(); });
     refresh();
 
     connect(copyWinBtn, &QPushButton::clicked, &dlg, [winCmd]() {
         QGuiApplication::clipboard()->setText(winCmd->toPlainText());
     });
-    connect(copyPiBtn, &QPushButton::clicked, &dlg, [piCmd]() {
-        QGuiApplication::clipboard()->setText(piCmd->toPlainText());
+    connect(copyServerBtn, &QPushButton::clicked, &dlg, [serverCmd]() {
+        QGuiApplication::clipboard()->setText(serverCmd->toPlainText());
     });
 
 #ifdef Q_OS_WIN
@@ -903,65 +983,84 @@ void MainWindow::addFolderClicked() {
         return;
     }
 
-    // Étape 1 : sélection du dossier local via le sélecteur natif Windows.
-    // On démarre dans le dossier Images de l'utilisateur.
+    // Étape 1 : sélection d'UN OU PLUSIEURS dossiers locaux. Un CD contient souvent
+    // plusieurs dossiers (par année, par événement) : les ajouter un par un serait
+    // pénible. Le sélecteur natif Windows ne sait pas choisir plusieurs dossiers ;
+    // on passe donc par le sélecteur Qt (non natif) et on active la sélection
+    // multiple sur sa vue interne (Ctrl/Maj pour cocher plusieurs entrées d'un même
+    // dossier parent, ex. les dossiers d'un CD).
     const QString startDir = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
-    const QString localDir = QFileDialog::getExistingDirectory(
-        this,
-        QStringLiteral("Sélectionner le dossier à surveiller"),
-        startDir);
-    if (localDir.isEmpty())
+    QFileDialog fileDlg(this, QStringLiteral("Sélectionner un ou plusieurs dossiers (Ctrl/Maj pour plusieurs)"),
+                        startDir);
+    fileDlg.setFileMode(QFileDialog::Directory);
+    fileDlg.setOption(QFileDialog::ShowDirsOnly, true);
+    fileDlg.setOption(QFileDialog::DontUseNativeDialog, true);   // requis pour la multi-sélection
+    if (auto* lv = fileDlg.findChild<QListView*>(QStringLiteral("listView")))
+        lv->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    if (auto* tv = fileDlg.findChild<QTreeView*>())
+        tv->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    QStringList localDirs;
+    if (fileDlg.exec() == QDialog::Accepted)
+        localDirs = fileDlg.selectedFiles();
+    localDirs.removeAll(QString());
+    if (localDirs.isEmpty())
         return;
 
-    // Étape 2 : traduction chemin local → chemin serveur.
-    const QString serverDir = applyPathMapping(localDir);
-
-    // Étape 3 : dialogue de confirmation avec les deux chemins.
-    // L'utilisateur peut corriger le chemin serveur si le mappage est imparfait
-    // ou absent.
+    // Étape 2 : dialogue de confirmation. Une ligne par dossier : chemin local (fixe)
+    // et chemin serveur (éditable, pré-rempli par le mappage). L'utilisateur corrige
+    // au besoin le chemin envoyé à morfPhoto.
     QDialog dlg(this);
-    dlg.setWindowTitle(QStringLiteral("Confirmer le dossier à ajouter"));
+    dlg.setWindowTitle(localDirs.size() > 1 ? QStringLiteral("Confirmer les dossiers à ajouter")
+                                            : QStringLiteral("Confirmer le dossier à ajouter"));
+    dlg.resize(680, 440);
     auto* layout = new QVBoxLayout(&dlg);
     layout->setSpacing(10);
     layout->setContentsMargins(16, 16, 16, 16);
 
-    // Chemin local (informatif, non éditable).
-    layout->addWidget(new QLabel(QStringLiteral("Dossier local sélectionné :")));
-    auto* localLabel = new QLabel(QDir::toNativeSeparators(localDir));
-    localLabel->setStyleSheet(QStringLiteral("color:#99a1ad; font-family: monospace;"));
-    localLabel->setWordWrap(true);
-    layout->addWidget(localLabel);
+    layout->addWidget(new QLabel(QStringLiteral(
+        "%1 dossier(s) sélectionné(s). Le <b>chemin serveur</b> (colonne de droite) est "
+        "ce qui sera envoyé à morfPhoto ; corrigez-le si un mappage manque.")
+        .arg(localDirs.size())));
 
-    // Avertissement si aucun mappage ne s'est appliqué.
-    const bool mappingApplied = (serverDir != QDir::fromNativeSeparators(localDir));
-    if (!mappingApplied) {
+    auto* table = new QTableWidget(localDirs.size(), 2);
+    table->setHorizontalHeaderLabels(
+        {QStringLiteral("Dossier local"), QStringLiteral("Chemin serveur morfPhoto (éditable)")});
+    table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    table->verticalHeader()->setVisible(false);
+    bool anyUnmapped = false;
+    for (int i = 0; i < localDirs.size(); ++i) {
+        const QString local  = localDirs[i];
+        const QString server = applyPathMapping(local);
+        if (server == QDir::fromNativeSeparators(local))
+            anyUnmapped = true;
+        auto* locItem = new QTableWidgetItem(QDir::toNativeSeparators(local));
+        locItem->setFlags(locItem->flags() & ~Qt::ItemIsEditable);   // informatif
+        table->setItem(i, 0, locItem);
+        table->setItem(i, 1, new QTableWidgetItem(server));
+    }
+    layout->addWidget(table, 1);
+
+    if (anyUnmapped) {
         auto* warn = new QLabel(
-            QStringLiteral("<span style='color:#e09000;'>⚠ Aucun mappage configuré. "
-                           "Vérifiez ou corrigez le chemin serveur ci-dessous. "
+            QStringLiteral("<span style='color:#e09000;'>⚠ Un ou plusieurs dossiers n'ont "
+                           "pas de mappage : vérifiez leur chemin serveur ci-dessus. "
                            "(<i>Fichier &gt; Mappage de chemins…</i>)</span>"));
         warn->setWordWrap(true);
         layout->addWidget(warn);
     }
 
-    // Chemin serveur (éditable) : c'est ce qui sera envoyé à morfPhoto.
-    layout->addWidget(new QLabel(QStringLiteral("Chemin sur le serveur morfPhoto (envoyé à l'API) :")));
-    auto* serverEdit = new QLineEdit(serverDir);
-    serverEdit->setMinimumWidth(420);
-    serverEdit->setFont(QFont(QStringLiteral("Courier New"), 9));
-    layout->addWidget(serverEdit);
-
-    // Rappel des racines autorisées.
     auto* rootsInfo = new QLabel(
         QStringLiteral("Racines autorisées : %1").arg(m_allowedRoots.join(QStringLiteral("  ·  "))));
     rootsInfo->setStyleSheet(QStringLiteral("color:#99a1ad;"));
     rootsInfo->setWordWrap(true);
     layout->addWidget(rootsInfo);
 
-    // --- Support amovible (CD/DVD, disque d'archive) ---
-    // Un support qu'on retire (CD gravé rangé sur une étagère) : morfPhoto NE marque
-    // JAMAIS ses photos disparues quand le support est absent, elles restent dans la
-    // base et donc dans morfAnalytics, support éjecté et même après un redémarrage.
-    auto* removableChk = new QCheckBox(QStringLiteral("Support amovible (CD/DVD, disque d'archive)"));
+    // --- Support amovible (CD/DVD, disque d'archive), appliqué à TOUS les dossiers ---
+    // Cas d'usage principal : plusieurs dossiers d'un même CD partagent le même volume.
+    // morfPhoto NE marque JAMAIS disparues les photos d'un dossier amovible support absent.
+    auto* removableChk = new QCheckBox(
+        QStringLiteral("Support amovible (CD/DVD, disque d'archive) — appliqué à tous les dossiers ci-dessus"));
     layout->addWidget(removableChk);
     auto* removableHint = new QLabel(
         QStringLiteral("Ne jamais marquer ses photos disparues quand le support est absent : "
@@ -980,7 +1079,9 @@ void MainWindow::addFolderClicked() {
     connect(removableChk, &QCheckBox::toggled, volEdit, &QLineEdit::setEnabled);
 
     auto* btns = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
-    btns->button(QDialogButtonBox::Ok)->setText(QStringLiteral("Ajouter"));
+    btns->button(QDialogButtonBox::Ok)->setText(
+        localDirs.size() > 1 ? QStringLiteral("Ajouter les %1 dossiers").arg(localDirs.size())
+                             : QStringLiteral("Ajouter"));
     connect(btns, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     connect(btns, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
     layout->addWidget(btns);
@@ -988,15 +1089,21 @@ void MainWindow::addFolderClicked() {
     if (dlg.exec() != QDialog::Accepted)
         return;
 
-    const QString dir = serverEdit->text().trimmed();
-    if (dir.isEmpty())
-        return;
-
-    // morfPhoto est l'autorité finale : il valide le périmètre, l'existence du
-    // dossier côté serveur et les droits. Le message d'erreur éventuel remonte
-    // tel quel via onActionResult.
+    // morfPhoto est l'autorité finale : il valide le périmètre, l'existence de chaque
+    // dossier et les droits. Un dossier en échec remonte via onActionResult sans
+    // empêcher les autres. Le support amovible et le nom de volume valent pour tous.
     const bool removable = removableChk->isChecked();
-    m_client->addFolder(dir, removable, removable ? volEdit->text().trimmed() : QString());
+    const QString vol = removable ? volEdit->text().trimmed() : QString();
+    int sent = 0;
+    for (int i = 0; i < table->rowCount(); ++i) {
+        const QString server = table->item(i, 1) ? table->item(i, 1)->text().trimmed() : QString();
+        if (server.isEmpty())
+            continue;
+        m_client->addFolder(server, removable, vol);
+        ++sent;
+    }
+    if (sent > 0)
+        statusBar()->showMessage(QStringLiteral("%1 dossier(s) envoyé(s) à morfPhoto.").arg(sent), 4000);
 }
 
 void MainWindow::toggleFolderClicked() {

@@ -2,7 +2,7 @@
 
 *Read in another language: **English** (this document) · [Français](README.fr.md).*
 
-[![Version](https://img.shields.io/badge/version-0.7.0-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.9.0-blue)](CHANGELOG.md)
 ![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus)
 ![Qt](https://img.shields.io/badge/Qt-6-41CD52?logo=qt)
 ![Build](https://img.shields.io/badge/CMake-3.21+-064F8C?logo=cmake)
@@ -30,23 +30,31 @@ PhotoHub  ──────────────────── HTTP /api
   (`C:\Users\frede\Pictures\…`) into Linux mount paths (`/mnt/photos/…`)
   before sending them to morfPhoto's API.
 
-## Setting up network access (assistant)
+## Setting up access (assistant)
 
-Network sharing is the step that most often trips people up: the Windows account
-name differs from the profile folder, the IP is unknown, `mount` syntax is unfriendly.
-The **Network access assistant** (`File > Network access assistant…`) does it for you,
-since PhotoHub runs on the very PC that holds the photos:
+morfPhoto indexes **paths local to the machine it runs on** (its `roots`). How you
+expose the photos depends on where it runs. The **Network access assistant**
+(`File > Network access assistant…`) starts from a choice of situation and adapts the
+steps. It covers three cases:
 
-1. It auto-detects the **PC name**, the **LAN IP** and the **Windows account**.
-2. It creates the **read-only Windows share** of the photo folder in one click
-   (a UAC elevation prompt appears).
-3. It generates the **Raspberry Pi commands** (mount, then `fstab` to make it
-   permanent), pre-filled with the right values, ready to paste.
+- **A Linux server (Raspberry Pi or other), photos shared from this PC.** It creates the
+  **read-only Windows share** in one click (UAC prompt) and generates the **server
+  commands** — install `cifs-utils` if needed, `cifs` mount, `fstab` to make it
+  permanent, and the reminder to add the mount point to `roots` — pre-filled (PC name,
+  IP, account, share name auto-detected).
+- **This Windows PC (morfPhoto and photos on the same machine).** No share, no mount:
+  the assistant gives the `roots` block for `morfphoto.json` with the local folder
+  (forward slashes). No path mapping is needed then.
+- **Another Windows PC, photos shared from this PC.** It creates the share here, then
+  gives the **UNC root** (`//PC-NAME/share`) to declare in the morfPhoto machine's
+  `roots` — no mount. The account running the morfPhoto service must have access to the
+  share.
 
-The only thing left to type is the **password**: your Windows sign-in password (or
-your Microsoft account password if that is how you sign in). A PIN does not work for
-network access, and Windows rejects an empty password. The share stays **read-only**:
-morfPhoto can never modify your photos.
+For the SMB-from-Linux cases the only thing to type is the **password**: your Windows
+sign-in password (or Microsoft account password). A PIN does not work for network
+access, and Windows rejects an empty password. The share stays **read-only**: morfPhoto
+can never modify your photos. In every case **exiftool** must be installed on the
+morfPhoto machine (otherwise files are indexed but EXIF metadata stays empty).
 
 ## What it does
 

@@ -3,6 +3,37 @@
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et du [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [0.9.0] - 2026-08-17
+
+### Ajouté
+
+- **Ajout de plusieurs dossiers en une fois.** « Ajouter un dossier… » permet désormais
+  de sélectionner **plusieurs dossiers** (Ctrl/Maj) au lieu d'un seul — pensé d'abord
+  pour un CD qui contient plusieurs dossiers (par année, par événement), mais utile aussi
+  sur un poste de travail. Le dialogue de confirmation liste tous les dossiers avec leur
+  **chemin serveur éditable** (pré-rempli par le mappage), signale ceux sans mappage, et
+  le **support amovible + nom de volume** s'appliquent à toute la sélection (les dossiers
+  d'un même CD partagent le volume). Chaque dossier est envoyé à morfPhoto qui reste
+  l'autorité ; un échec sur l'un n'empêche pas les autres. (Sélecteur Qt non natif, requis
+  pour la multi-sélection de dossiers.)
+
+## [0.8.0] - 2026-08-17
+
+### Modifié
+
+- **Assistant d'accès réseau : trois topologies au lieu d'une.** Il ne suppose plus que
+  morfPhoto tourne sur un Raspberry Pi. Un choix « morfPhoto tourne sur : » adapte les
+  étapes :
+  - **serveur Linux (Pi ou autre), photos partagées depuis ce PC** — partage SMB en un
+    clic + commandes serveur généralisées (`cifs-utils` au besoin, montage `cifs`,
+    `fstab`, rappel d'ajouter le point de montage à `roots`) ;
+  - **ce PC Windows (morfPhoto et photos sur la même machine)** — aucun partage ni
+    montage, juste le bloc `roots` à mettre dans `morfphoto.json` avec le dossier local ;
+  - **autre PC Windows, photos partagées depuis ce PC** — partage ici + racine UNC
+    (`//NOM-DU-PC/partage`) à déclarer dans le `roots` de la machine morfPhoto.
+  La note « mot de passe » n'apparaît que pour le cas SMB depuis Linux ; un rappel
+  « exiftool requis sur la machine morfPhoto » est ajouté. README FR + EN mis à jour.
+
 ## [0.7.0] - 2026-08-17
 
 ### Ajouté

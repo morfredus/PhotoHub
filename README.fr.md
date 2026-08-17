@@ -2,7 +2,7 @@
 
 *Lire dans une autre langue : [English](README.md) · **Français** (ce document).*
 
-[![Version](https://img.shields.io/badge/version-0.7.0-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.9.0-blue)](CHANGELOG.md)
 ![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus)
 ![Qt](https://img.shields.io/badge/Qt-6-41CD52?logo=qt)
 ![Build](https://img.shields.io/badge/CMake-3.21+-064F8C?logo=cmake)
@@ -32,24 +32,32 @@ PhotoHub  ──────────────────── HTTP /api
   (`C:\Users\frede\Pictures\…`) en chemins de montage Linux (`/mnt/photos/…`)
   avant de les envoyer à l'API de morfPhoto.
 
-## Mettre en place l'accès réseau (assistant)
+## Mettre en place l'accès (assistant)
 
-Le partage réseau est l'étape qui bloque le plus souvent : le nom du compte Windows
-diffère du dossier de profil, l'adresse IP est inconnue, la syntaxe de `mount` est
-ingrate. L'**Assistant d'accès réseau** (`Fichier > Assistant d'accès réseau…`) fait
-ce travail à votre place, puisque PhotoHub tourne justement sur le PC où sont les photos :
+morfPhoto indexe des **chemins locaux à la machine où il tourne** (son champ `roots`).
+Selon l'endroit où il tourne, l'accès aux photos se prépare différemment. L'**Assistant
+d'accès réseau** (`Fichier > Assistant d'accès réseau…`) part d'un choix de situation et
+adapte les étapes. Il couvre trois cas :
 
-1. Il détecte automatiquement le **nom du PC**, l'**adresse IP** du réseau local et le
-   **compte Windows**.
-2. Il crée le **partage Windows en lecture seule** du dossier photos, en un clic
-   (une autorisation administrateur / UAC s'affiche).
-3. Il génère les **commandes à coller sur le Raspberry Pi** (montage puis `fstab` pour
-   le rendre permanent), déjà remplies avec les bonnes valeurs.
+- **Un serveur Linux (Raspberry Pi ou autre), photos partagées depuis ce PC.** Il crée
+  le **partage Windows en lecture seule** en un clic (autorisation administrateur / UAC),
+  et génère les **commandes du serveur** — installation de `cifs-utils` au besoin, montage
+  `cifs`, `fstab` pour le rendre permanent, et le rappel d'ajouter le point de montage à
+  `roots` — déjà remplies (nom du PC, IP, compte, nom de partage détectés).
+- **Ce PC Windows (morfPhoto et les photos sur la même machine).** Aucun partage, aucun
+  montage : l'assistant donne le bloc `roots` à mettre dans `morfphoto.json` avec le
+  dossier local (en slashs avant). Aucun mappage de chemins n'est alors nécessaire.
+- **Un autre PC Windows, photos partagées depuis ce PC.** Il crée le partage ici, puis
+  donne la **racine UNC** (`//NOM-DU-PC/partage`) à déclarer dans le `roots` de la machine
+  morfPhoto — sans montage. Le compte qui exécute le service morfPhoto doit avoir accès au
+  partage.
 
-Le seul élément qui reste à saisir est le **mot de passe** : celui de votre session
-Windows (ou de votre compte Microsoft si vous vous connectez ainsi). Un code PIN ne
-fonctionne pas pour un accès réseau, et Windows refuse un mot de passe vide. Le partage
-reste **en lecture seule** : morfPhoto ne peut jamais modifier vos photos.
+Pour les cas avec partage SMB depuis Linux, le seul élément à saisir est le **mot de
+passe** : celui de votre session Windows (ou de votre compte Microsoft si vous vous
+connectez ainsi). Un code PIN ne fonctionne pas pour un accès réseau, et Windows refuse
+un mot de passe vide. Le partage reste **en lecture seule** : morfPhoto ne peut jamais
+modifier vos photos. Dans tous les cas, **exiftool** doit être installé sur la machine
+morfPhoto (sinon les fichiers sont indexés mais les métadonnées EXIF restent vides).
 
 ## Ce qu'il fait
 
