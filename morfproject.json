@@ -1,5 +1,14 @@
 {
   "schema_version": 1,
   "project": { "id": "PhotoHub", "type": "application" },
-  "packaging": { "provider": "none", "targets": {} }
+  "packaging": {
+    "provider": "project",
+    "targets": {
+      "windows-x86_64-zip": {
+        "platform": { "os": "windows", "arch": "x86_64" },
+        "build": { "preset": "mingw" },
+        "package": { "script": "scripts/windows/package-win.ps1", "format": "zip" }
+      }
+    }
+  }
 }

@@ -3,6 +3,15 @@
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et du [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [0.10.10] - 2026-08-23
+
+### Ajouté
+
+- Livrable Windows : `morfproject.json` (`windows-x86_64-zip`) et
+  `scripts/windows/package-win.ps1`, pour que `package-all --sync` sous Windows
+  publie le zip sur la release GitHub.
+- Copie vendorée de morfUpdate alignée sur 0.4.5.
+
 ## [0.10.9] - 2026-08-22
 
 ### Modifié
