@@ -10,8 +10,11 @@
 #include <QNetworkRequest>
 #include <QNetworkReply>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QStringList>
 #include <QUrl>
+#include <QTimer>
+#include <memory>
 
 namespace photohub {
 
@@ -37,24 +40,28 @@ void MorfPhotoClient::setBaseUrl(const QString& url) {
 }
 
 void MorfPhotoClient::send(const QByteArray& verb, const QString& path,
-                           const QByteArray& body, Handler handler) {
+                           const QByteArray& body, Handler handler, int timeoutMs, bool quiet) {
     if (m_base.isEmpty()) {
-        emit failed(QStringLiteral("aucun morfPhoto sélectionné"));
+        if (!quiet)
+            emit failed(QStringLiteral("aucun morfPhoto sélectionné"));
+        if (handler) handler(0, {});
         return;
     }
     QNetworkRequest req{QUrl(m_base + path)};
-    req.setTransferTimeout(8000);
+    req.setTransferTimeout(timeoutMs);
     if (!body.isEmpty())
         req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
 
     QNetworkReply* reply = m_net->sendCustomRequest(req, verb, body);
-    connect(reply, &QNetworkReply::finished, this, [this, reply, handler]() {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, handler, quiet]() {
         reply->deleteLater();
         const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
-        // Erreur de transport (hote injoignable, timeout) : pas de statut HTTP.
         if (reply->error() != QNetworkReply::NoError && status == 0) {
-            emit failed(reply->errorString());
+            if (!quiet)
+                emit failed(reply->errorString());
+            if (handler)
+                handler(0, {});
             return;
         }
         if (handler)
@@ -92,6 +99,83 @@ void MorfPhotoClient::addFolder(const QString& path, bool removable, const QStri
         if (s == 201) { emit actionResult(true, QStringLiteral("Dossier ajouté.")); refreshAll(); }
         else          emit actionResult(false, errorText(d, s));
     });
+}
+
+void MorfPhotoClient::pushSource(const QString& host, const QString& share, const QString& username,
+                                 const QString& password, const QString& hostname,
+                                 std::function<void(bool, const QJsonObject&)> cb) {
+    QJsonObject in{{"host", host}, {"share", share},
+                   {"username", username}, {"password", password},
+                   {"hostname", hostname}};
+    const QByteArray body = QJsonDocument(in).toJson(QJsonDocument::Compact);
+    // Montage CIFS + fstab + JSON : largement au-dela du timeout HTTP usuel.
+    send("POST", QStringLiteral("/api/v1/sources"), body, [this, cb](int s, const QJsonDocument& d) {
+        QJsonObject report = d.object();
+        if (s == 201) {
+            const QString mp = report.value(QStringLiteral("mountpoint")).toString();
+            emit actionResult(true, QStringLiteral("Source montée sur le serveur : %1").arg(mp));
+            if (cb) cb(true, report);
+        } else {
+            if (!report.contains(QStringLiteral("detail")))
+                report[QStringLiteral("detail")] = errorText(d, s);
+            emit actionResult(false, errorText(d, s));
+            if (cb) cb(false, report);
+        }
+    }, 120000);
+}
+
+void MorfPhotoClient::confirmSourceRoot(const QString& mountpoint, bool waitRestart,
+                                        std::function<void(bool, const QJsonObject&)> cb) {
+    const auto check = [this, mountpoint, cb]() {
+        send("GET", QStringLiteral("/status"), {}, [this, mountpoint, cb](int s, const QJsonDocument& d) {
+            const QString state = d.object().value(QStringLiteral("state")).toString();
+            const bool statusOk = (s == 200) && (state.isEmpty() || state == QLatin1String("ok")
+                || state == QLatin1String("idle") || state == QLatin1String("indexing"));
+            send("GET", QStringLiteral("/api/v1/roots"), {},
+                 [this, mountpoint, cb, statusOk, s](int s2, const QJsonDocument& d2) {
+                bool found = false;
+                for (const QJsonValue& v : d2.object().value(QStringLiteral("items")).toArray()) {
+                    if (v.toString() == mountpoint)
+                        found = true;
+                }
+                QJsonObject extra;
+                extra[QStringLiteral("service_active")] = statusOk;
+                extra[QStringLiteral("status_http")]    = s;
+                extra[QStringLiteral("roots_http")]     = s2;
+                extra[QStringLiteral("root_in_api")]    = found;
+                extra[QStringLiteral("mountpoint")]     = mountpoint;
+                if (statusOk && found)
+                    refreshAll();
+                if (cb) cb(statusOk && found, extra);
+            }, 8000, true);
+        }, 8000, true);
+    };
+
+    if (!waitRestart) {
+        check();
+        return;
+    }
+
+    // Le service vient d'etre relance : attendre /healthz jusqu'a ~45 s.
+    auto* timer = new QTimer(this);
+    timer->setInterval(1000);
+    const auto tries = std::make_shared<int>(0);
+    connect(timer, &QTimer::timeout, this, [this, timer, tries, check]() {
+        send("GET", QStringLiteral("/healthz"), {}, [timer, tries, check](int s, const QJsonDocument&) {
+            if (s == 200) {
+                timer->stop();
+                timer->deleteLater();
+                check();
+                return;
+            }
+            if (++(*tries) >= 45) {
+                timer->stop();
+                timer->deleteLater();
+                check();
+            }
+        }, 3000, true);
+    });
+    timer->start();
 }
 
 void MorfPhotoClient::setFolderEnabled(int folderId, bool enabled) {

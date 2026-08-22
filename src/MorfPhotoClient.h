@@ -47,6 +47,18 @@ public:
     void restoreFolder(int folderId);                  // annule un retrait doux
     void triggerIndex(const QString& mode);            // "incremental" | "full"
 
+    // Envoie une source SMB à monter côté serveur. Une machine = un hostname =
+    // un point de montage /mnt/photos_<slug>. Le mot de passe ne transite qu'une
+    // fois. `cb` reçoit le rapport d'étapes (succès ou échec partiel).
+    void pushSource(const QString& host, const QString& share, const QString& username,
+                    const QString& password, const QString& hostname,
+                    std::function<void(bool ok, const QJsonObject& report)> cb = {});
+
+    // Après un envoi : attend le retour de morfPhoto (si redémarrage) puis
+    // vérifie GET /status et GET /api/v1/roots pour la racine attendue.
+    void confirmSourceRoot(const QString& mountpoint, bool waitRestart,
+                           std::function<void(bool ok, const QJsonObject& extra)> cb);
+
     // Purge DEFINITIVE (irreversible) selon une portee : scope = "folder" (value =
     // id), "year" (value = annee), "camera" (value = nom), "all" (value ignoree).
     void purge(const QString& scope, const QVariant& value);
@@ -64,7 +76,8 @@ signals:
 
 private:
     using Handler = std::function<void(int, const QJsonDocument&)>;
-    void send(const QByteArray& verb, const QString& path, const QByteArray& body, Handler handler);
+    void send(const QByteArray& verb, const QString& path, const QByteArray& body, Handler handler,
+              int timeoutMs = 8000, bool quiet = false);
 
     QNetworkAccessManager* m_net;
     QString                m_base;

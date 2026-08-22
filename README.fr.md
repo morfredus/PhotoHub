@@ -2,7 +2,7 @@
 
 *Lire dans une autre langue : [English](README.md) · **Français** (ce document).*
 
-[![Version](https://img.shields.io/badge/version-0.9.0-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.10.9-blue)](CHANGELOG.md)
 ![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus)
 ![Qt](https://img.shields.io/badge/Qt-6-41CD52?logo=qt)
 ![Build](https://img.shields.io/badge/CMake-3.21+-064F8C?logo=cmake)
@@ -19,7 +19,7 @@ SQLite. Il trouve morfPhoto sur le réseau local par sa **capacité** morfBeacon
 ```
 Windows (poste de travail)          Linux ARM64 (Raspberry Pi)
 ─────────────────────────           ──────────────────────────
-C:\Users\frede\Pictures\  ←── Samba/SMB ───→  /mnt/photos/   (montage en lecture)
+C:\Users\frede\Pictures\  ←── Samba/SMB ───→  /mnt/photos_<hostname>/   (montage en lecture)
                                                morfPhoto       (indexeur, API HTTP)
 PhotoHub  ──────────────────── HTTP /api/v1 ──→ morfPhoto
 ```
@@ -29,7 +29,7 @@ PhotoHub  ──────────────────── HTTP /api
   dossiers Windows.
 - PhotoHub tourne sur Windows et utilise un **mappage de chemins**
   (`Fichier > Mappage de chemins…`) pour traduire les chemins locaux Windows
-  (`C:\Users\frede\Pictures\…`) en chemins de montage Linux (`/mnt/photos/…`)
+  (`C:\Users\frede\Pictures\…`) en chemins de montage Linux (`/mnt/photos_<hostname>/…`)
   avant de les envoyer à l'API de morfPhoto.
 
 ## Mettre en place l'accès (assistant)
@@ -40,10 +40,10 @@ d'accès réseau** (`Fichier > Assistant d'accès réseau…`) part d'un choix d
 adapte les étapes. Il couvre trois cas :
 
 - **Un serveur Linux (Raspberry Pi ou autre), photos partagées depuis ce PC.** Il crée
-  le **partage Windows en lecture seule** en un clic (autorisation administrateur / UAC),
-  et génère les **commandes du serveur** — installation de `cifs-utils` au besoin, montage
-  `cifs`, `fstab` pour le rendre permanent, et le rappel d'ajouter le point de montage à
-  `roots` — déjà remplies (nom du PC, IP, compte, nom de partage détectés).
+  le **partage Windows en lecture seule** en un clic (autorisation administrateur / UAC)
+  et **envoie la configuration** à morfPhoto, qui monte `//IP/partage` sous
+  `/mnt/photos_<hostname>` avec un fichier d'identifiants dédié. Les commandes
+  serveur équivalentes restent générées (nom du PC, IP, compte, nom de partage).
 - **Ce PC Windows (morfPhoto et les photos sur la même machine).** Aucun partage, aucun
   montage : l'assistant donne le bloc `roots` à mettre dans `morfphoto.json` avec le
   dossier local (en slashs avant). Aucun mappage de chemins n'est alors nécessaire.
@@ -52,12 +52,25 @@ adapte les étapes. Il couvre trois cas :
   morfPhoto — sans montage. Le compte qui exécute le service morfPhoto doit avoir accès au
   partage.
 
-Pour les cas avec partage SMB depuis Linux, le seul élément à saisir est le **mot de
-passe** : celui de votre session Windows (ou de votre compte Microsoft si vous vous
-connectez ainsi). Un code PIN ne fonctionne pas pour un accès réseau, et Windows refuse
-un mot de passe vide. Le partage reste **en lecture seule** : morfPhoto ne peut jamais
-modifier vos photos. Dans tous les cas, **exiftool** doit être installé sur la machine
-morfPhoto (sinon les fichiers sont indexés mais les métadonnées EXIF restent vides).
+Pour les cas avec partage SMB depuis Linux, il faut le **nom d'utilisateur
+Windows de cette machine** (pas l'adresse e-mail) et le mot de passe adapté :
+
+- **compte local** : mot de passe de session Windows ;
+- **compte lié à Microsoft** : mot de passe du compte Microsoft associé.
+
+Un PIN Windows Hello, une empreinte, la reconnaissance faciale ou une passkey
+ne fonctionnent pas pour le réseau. Windows refuse un mot de passe vide. Il
+n'est pas nécessaire de créer un compte local dédié. Le détail, les erreurs
+(`STATUS_ACCOUNT_LOCKED_OUT`, etc.) et la topologie validée (plusieurs PhotoHub
+Windows, un seul morfPhoto sur le Pi) sont dans la notice du dépôt morfSystem :
+[PHOTOS-SOURCES-RESEAU](https://github.com/morfredus/morfSystem/blob/main/docs/PHOTOS-SOURCES-RESEAU.md).
+Le partage reste **en lecture seule**. Dans tous les cas,
+**exiftool** doit être installé sur la machine morfPhoto (sinon les fichiers
+sont indexés mais les métadonnées EXIF restent vides).
+
+Pendant une indexation, PhotoHub n'affiche qu'une ligne d'état et une barre de
+pourcentage. Le détail de la passe (connus, ajoutés, erreurs) revient quand la
+barre disparaît, comme bilan.
 
 ## Ce qu'il fait
 

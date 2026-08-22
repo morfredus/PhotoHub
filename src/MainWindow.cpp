@@ -32,6 +32,8 @@
 #include <QFileInfo>
 #include <QLocale>
 #include <QMessageBox>
+#include <QInputDialog>
+#include <QLineEdit>
 #include <QStatusBar>
 #include <QMenuBar>
 #include <QMenu>
@@ -50,6 +52,8 @@
 #include <QPlainTextEdit>
 #include <QFile>
 #include <QRegularExpression>
+#include <QJsonArray>
+#include <QHash>
 
 #include <morfupdate/UpdateDialog.h>
 #include <morfupdate/morfUpdateConfig.h>
@@ -59,6 +63,56 @@ namespace photohub {
 namespace {
 constexpr const char* kCapPhoto     = "photo_index";
 constexpr const char* kCapAnalytics = "photo_analytics";
+
+QString stepLabel(const QString& id) {
+    static const QHash<QString, QString> labels = {
+        {QStringLiteral("source_identified"),       QStringLiteral("Machine source identifiée")},
+        {QStringLiteral("hostname_normalized"),     QStringLiteral("Hostname normalisé")},
+        {QStringLiteral("mountpoint_created"),      QStringLiteral("Point de montage créé")},
+        {QStringLiteral("credentials_written"),     QStringLiteral("Credentials propres à la source")},
+        {QStringLiteral("credentials_permissions"), QStringLiteral("Permissions des credentials")},
+        {QStringLiteral("smb_auth"),                QStringLiteral("Authentification SMB")},
+        {QStringLiteral("cifs_mounted"),            QStringLiteral("Partage CIFS monté")},
+        {QStringLiteral("share_readable"),          QStringLiteral("Partage accessible en lecture")},
+        {QStringLiteral("fstab_configured"),        QStringLiteral("Montage persistant configuré")},
+        {QStringLiteral("root_added"),              QStringLiteral("Root ajoutée à morfPhoto")},
+        {QStringLiteral("json_valid"),              QStringLiteral("Configuration morfPhoto valide")},
+        {QStringLiteral("service_restarted"),       QStringLiteral("morfPhoto redémarré")},
+        {QStringLiteral("service_active"),          QStringLiteral("Service opérationnel")},
+        {QStringLiteral("root_in_api"),             QStringLiteral("Root confirmée par l'API")},
+    };
+    return labels.value(id, id);
+}
+
+QString formatSourceReport(const QJsonObject& report) {
+    QStringList lines;
+    for (const QJsonValue& v : report.value(QStringLiteral("steps")).toArray()) {
+        const QJsonObject s = v.toObject();
+        const bool ok = s.value(QStringLiteral("ok")).toBool();
+        QString line = QStringLiteral("%1  %2")
+            .arg(stepLabel(s.value(QStringLiteral("id")).toString()), -38)
+            .arg(ok ? QStringLiteral("✓") : QStringLiteral("✗"));
+        const QString detail = s.value(QStringLiteral("detail")).toString().trimmed();
+        if (!ok && !detail.isEmpty())
+            line += QStringLiteral("\n  %1").arg(detail);
+        else if (ok && (s.value(QStringLiteral("id")).toString() == QLatin1String("hostname_normalized")
+                        || s.value(QStringLiteral("id")).toString() == QLatin1String("mountpoint_created")))
+            line += QStringLiteral("  %1").arg(detail);
+        lines << line;
+    }
+    const QString detail = report.value(QStringLiteral("detail")).toString().trimmed();
+    const QString code   = report.value(QStringLiteral("code")).toString().trimmed();
+    if (!report.value(QStringLiteral("ok")).toBool() && !detail.isEmpty()) {
+        lines << QString();
+        if (!code.isEmpty())
+            lines << code;
+        lines << detail;
+    } else if (report.value(QStringLiteral("already_configured")).toBool()) {
+        lines << QString();
+        lines << QStringLiteral("Configuration déjà opérationnelle (aucun changement).");
+    }
+    return lines.join(QLatin1Char('\n'));
+}
 
 QString folderState(const QJsonObject& f) {
     if (f.value(QStringLiteral("enabled")).toInt() == 1)
@@ -228,9 +282,11 @@ void MainWindow::buildUi() {
     iBtns->addStretch(1);
     iLayout->addLayout(iBtns);
     m_indexLabel = new QLabel(QStringLiteral("—"));
+    m_indexLabel->setWordWrap(true);
     iLayout->addWidget(m_indexLabel);
     m_progress = new QProgressBar;
     m_progress->setVisible(false);
+    m_progress->setTextVisible(true);
     iLayout->addWidget(m_progress);
     root->addWidget(index);
     connect(m_indexIncrBtn, &QPushButton::clicked, this, [this]() { m_client->triggerIndex(QStringLiteral("incremental")); });
@@ -336,7 +392,7 @@ void MainWindow::showMappingsDialog() {
             "morfPhoto (Linux) accède aux photos via un montage réseau Samba/SMB <b>en lecture seule</b>.<br>"
             "Les fichiers restent sur Windows et ne sont jamais modifiés par morfPhoto.<br><br>"
             "Déclarez ici la correspondance entre votre dossier Windows local et son point de montage Linux.<br>"
-            "Exemple : <b>C:\\Users\\frede\\Pictures</b> → <b>/mnt/photos</b>"));
+            "Exemple : <b>C:\\Users\\frede\\Pictures</b> → <b>/mnt/photos_&lt;poste&gt;</b>"));
     info->setWordWrap(true);
     layout->addWidget(info);
 
@@ -374,7 +430,7 @@ void MainWindow::showMappingsDialog() {
         const QString pictures = QDir::toNativeSeparators(
             QStandardPaths::writableLocation(QStandardPaths::PicturesLocation));
         table->setItem(row, 0, new QTableWidgetItem(pictures));
-        table->setItem(row, 1, new QTableWidgetItem(QStringLiteral("/mnt/photos")));
+        table->setItem(row, 1, new QTableWidgetItem(predictedMountpoint()));
         table->setCurrentCell(row, 0);
         table->editItem(table->item(row, 0));
     });
@@ -473,6 +529,21 @@ QString MainWindow::shareNameFor(const QString& localRoot) {
     return QStringLiteral("morfPhoto-") + clean;
 }
 
+QString MainWindow::canonicalSourceSlug() {
+    // ASUS-DEV -> asus-dev ; jamais une IP. Meme convention que le serveur.
+    QString s = detectPcName().trimmed().toLower();
+    s.replace(QRegularExpression(QStringLiteral("[^a-z0-9._-]")), QStringLiteral("-"));
+    while (s.startsWith(QLatin1Char('-')) || s.startsWith(QLatin1Char('.')))
+        s.remove(0, 1);
+    while (s.endsWith(QLatin1Char('-')) || s.endsWith(QLatin1Char('.')))
+        s.chop(1);
+    return s.isEmpty() ? QStringLiteral("pc") : s;
+}
+
+QString MainWindow::predictedMountpoint() {
+    return QStringLiteral("/mnt/photos_%1").arg(canonicalSourceSlug());
+}
+
 void MainWindow::showNetworkAccessDialog() {
     if (m_pathMappings.isEmpty()) {
         const auto answer = QMessageBox::question(this, QStringLiteral("Assistant d'accès réseau"),
@@ -560,16 +631,101 @@ void MainWindow::showNetworkAccessDialog() {
     auto* copyServerBtn = new QPushButton(QStringLiteral("Copier"));
     layout->addWidget(copyServerBtn);
 
+    // Identifiants du montage, éditables avant l'envoi. L'identifiant SMB validé
+    // est le nom d'utilisateur Windows de la machine, y compris si la session est
+    // liée à un compte Microsoft (ce n'est PAS l'e-mail). Le mot de passe, lui,
+    // change : session locale, ou mot de passe Microsoft. Jamais le PIN.
+    auto* credBox = new QWidget;
+    auto* credLay = new QVBoxLayout(credBox);
+    credLay->setContentsMargins(0, 0, 0, 0);
+    credLay->addWidget(new QLabel(QStringLiteral(
+        "<b>Identifiants Windows pour l'accès réseau</b>")));
+    auto* localRadio = new QRadioButton(QStringLiteral("Compte Windows local"));
+    auto* msRadio = new QRadioButton(QStringLiteral("Compte Windows lié à un compte Microsoft"));
+    localRadio->setChecked(true);
+    auto* typeGroup = new QButtonGroup(&dlg);
+    typeGroup->addButton(localRadio);
+    typeGroup->addButton(msRadio);
+    credLay->addWidget(localRadio);
+    credLay->addWidget(msRadio);
+    auto* userRow = new QHBoxLayout;
+    userRow->addWidget(new QLabel(QStringLiteral("Nom d'utilisateur :")));
+    auto* userEdit = new QLineEdit(user);
+    userEdit->setPlaceholderText(QStringLiteral(
+        "nom d'utilisateur Windows de cette machine (ex. Fred)"));
+    userRow->addWidget(userEdit, 1);
+    credLay->addLayout(userRow);
+    auto* pwdRow = new QHBoxLayout;
+    pwdRow->addWidget(new QLabel(QStringLiteral("Mot de passe :")));
+    auto* pwdEdit = new QLineEdit;
+    pwdEdit->setEchoMode(QLineEdit::Password);
+    pwdRow->addWidget(pwdEdit, 1);
+    credLay->addLayout(pwdRow);
+    auto* pwdHint = new QLabel;
+    pwdHint->setWordWrap(true);
+    pwdHint->setStyleSheet(QStringLiteral("color:#e09000;"));
+    credLay->addWidget(pwdHint);
+    const auto refreshPwdHint = [pwdEdit, pwdHint, localRadio]() {
+        if (localRadio->isChecked()) {
+            pwdEdit->setPlaceholderText(QStringLiteral(
+                "mot de passe de session Windows (pas le PIN)"));
+            pwdHint->setText(QStringLiteral(
+                "<b>Compte local :</b> utilisez votre mot de passe de session Windows.<br>"
+                "<b>Compte Microsoft :</b> utilisez le mot de passe de votre compte Microsoft.<br>"
+                "Dans les deux cas, l'identifiant est le <b>nom d'utilisateur Windows</b> "
+                "de cette machine, pas l'adresse e-mail, et jamais le PIN Windows Hello, "
+                "l'empreinte, la reconnaissance faciale ou une passkey."));
+        } else {
+            pwdEdit->setPlaceholderText(QStringLiteral(
+                "mot de passe du compte Microsoft associé (pas le PIN)"));
+            pwdHint->setText(QStringLiteral(
+                "La session est liée à Microsoft : l'identifiant reste le "
+                "<b>nom Windows de cette machine</b> (pas l'e-mail). Le mot de passe "
+                "est celui du <b>compte Microsoft</b>, pas le PIN Windows Hello."));
+        }
+    };
+    connect(localRadio, &QRadioButton::toggled, &dlg, [refreshPwdHint](bool) { refreshPwdHint(); });
+    refreshPwdHint();
+    layout->addWidget(credBox);
+
+    // Un-clic (serveur Linux) : au lieu de coller les commandes de l'étape 2, envoyer
+    // la config directement à morfPhoto (comme « Envoyer la config » de SiteWatch).
+    // morfPhoto monte alors le partage en lecture seule via son helper privilégié.
+    // Multi-machine : chaque poste pousse SA source, sans écraser les autres.
+    auto* pushBtn = new QPushButton(QStringLiteral("Envoyer la config au serveur morfPhoto (recommandé)"));
+    pushBtn->setStyleSheet(QStringLiteral("font-weight:bold; padding:6px;"));
+    layout->addWidget(pushBtn);
+    auto* pushHint = new QLabel(QStringLiteral(
+        "Évite le terminal : le serveur monte le partage tout seul et l'ajoute à ses racines. "
+        "L'étape 1 (partage de ce dossier) reste nécessaire. Le mot de passe n'est utilisé "
+        "qu'une fois pour le montage et n'est jamais conservé par le service."));
+    pushHint->setWordWrap(true);
+    pushHint->setStyleSheet(QStringLiteral("color:#99a1ad;"));
+    layout->addWidget(pushHint);
+
     // Note mot de passe : utile seulement pour un montage SMB depuis Linux (fichier
     // d'identifiants). Masquée dans les autres cas.
     auto* note = new QLabel(QStringLiteral(
-        "<span style='color:#e09000;'>Le mot de passe à mettre dans le fichier est celui "
-        "de votre session Windows (compte <b>%1</b>). Si vous vous connectez avec un compte "
-        "Microsoft, c'est le mot de passe de ce compte Microsoft. Un code PIN ne fonctionne "
-        "pas pour le réseau, et un mot de passe vide est refusé par Windows.</span>")
+        "<span style='color:#e09000;'>Le PIN Windows Hello, l'empreinte, la "
+        "reconnaissance faciale ou une passkey ne sont <b>pas</b> le mot de passe "
+        "SMB. Compte local : mot de passe de session. Compte Microsoft : mot de "
+        "passe du compte Microsoft. Identifiant dans les deux cas : le nom "
+        "Windows de cette machine (détecté : « %1 »), pas l'adresse e-mail. "
+        "Un mot de passe vide est refusé. Il n'est pas nécessaire de créer un "
+        "compte technique dédié.</span>")
         .arg(user.isEmpty() ? QStringLiteral("Windows") : user));
     note->setWordWrap(true);
     layout->addWidget(note);
+
+    auto* stepsLabel = new QLabel(QStringLiteral("<b>État de la configuration</b>"));
+    layout->addWidget(stepsLabel);
+    auto* stepsView = new QPlainTextEdit;
+    stepsView->setReadOnly(true);
+    stepsView->setMaximumHeight(180);
+    stepsView->setFont(QFont(QStringLiteral("Consolas"), 9));
+    stepsView->setPlaceholderText(QStringLiteral(
+        "Les étapes s'afficheront ici après l'envoi de la configuration."));
+    layout->addWidget(stepsView);
 
     auto* btns = new QDialogButtonBox(QDialogButtonBox::Close);
     connect(btns, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
@@ -593,12 +749,15 @@ void MainWindow::showNetworkAccessDialog() {
         const QString pcShown   = pc.isEmpty() ? QStringLiteral("NOM_DU_PC") : pc;
         const QString userShown = user.isEmpty() ? QStringLiteral("VOTRE_COMPTE") : user;
 
+        const QString credFile = QStringLiteral("/etc/morfsystem/smb-photos-%1.cred")
+                                     .arg(canonicalSourceSlug());
+        const QString mountPath = predictedMountpoint();
         // Chemin que morfPhoto verra (à mettre dans "roots") selon la topologie :
-        //   Linux  -> le point de montage du mappage (ex. /mnt/photos) ;
+        //   Linux  -> /mnt/photos_<hostname> (jamais /mnt/photos générique) ;
         //   ce PC  -> le dossier local lui-même (slashs avant, identité) ;
         //   autre PC Windows -> une racine UNC vers le partage de ce PC.
         QString serverRoot;
-        if (topo == 0)      serverRoot = m_pathMappings[i].second;
+        if (topo == 0)      serverRoot = mountPath;
         else if (topo == 1) serverRoot = QDir::fromNativeSeparators(localRoot);
         else                serverRoot = QStringLiteral("//%1/%2").arg(pcShown, share);
 
@@ -615,6 +774,14 @@ void MainWindow::showNetworkAccessDialog() {
         // Note mot de passe : seulement pour le montage Linux (fichier d'identifiants).
         note->setVisible(linuxMount);
 
+        // Bouton un-clic : uniquement pour le serveur Linux (topo 0), le seul cas où
+        // morfPhoto sait monter lui-même. Les deux autres topologies restent manuelles.
+        pushBtn->setVisible(topo == 0);
+        pushHint->setVisible(topo == 0);
+        credBox->setVisible(topo == 0);
+        stepsLabel->setVisible(topo == 0);
+        stepsView->setVisible(topo == 0);
+
         if (topo == 0) {
             // Serveur Linux : installer cifs-utils au besoin, monter en lecture seule,
             // rendre le montage permanent, puis déclarer la racine dans morfphoto.json.
@@ -623,19 +790,21 @@ void MainWindow::showNetworkAccessDialog() {
             serverCmd->setPlainText(QStringLiteral(
                 "# Client SMB (si absent) : sudo apt install -y cifs-utils\n"
                 "sudo mkdir -p %1\n"
-                "sudo tee /etc/morfsystem/smb-photos.cred >/dev/null <<'EOF'\n"
+                "sudo tee %5 >/dev/null <<'EOF'\n"
                 "username=%2\n"
                 "password=VOTRE_MOT_DE_PASSE_WINDOWS\n"
                 "EOF\n"
-                "sudo chmod 600 /etc/morfsystem/smb-photos.cred\n"
-                "sudo mount -t cifs //%3/%4 %1 -o credentials=/etc/morfsystem/smb-photos.cred,ro,uid=1000,gid=1000,iocharset=utf8,vers=3.0\n"
-                "ls %1\n"
+                "sudo chmod 600 %5\n"
+                "sudo chown root:root %5\n"
+                "sudo mount -t cifs //%3/%4 %1 -o credentials=%5,ro,uid=1000,gid=1000,iocharset=utf8,vers=3.0\n"
+                "findmnt -t cifs %1 && ls %1\n"
                 "\n"
-                "# Montage permanent (au redémarrage) :\n"
-                "echo '//%3/%4 %1 cifs credentials=/etc/morfsystem/smb-photos.cred,ro,uid=1000,gid=1000,iocharset=utf8,vers=3.0,nofail,x-systemd.automount 0 0' | sudo tee -a /etc/fstab\n"
+                "# Montage permanent (au redémarrage), seulement après validation :\n"
+                "echo '//%3/%4 %1 cifs credentials=%5,ro,uid=1000,gid=1000,iocharset=utf8,vers=3.0,nofail,x-systemd.automount 0 0' | sudo tee -a /etc/fstab\n"
+                "sudo systemctl daemon-reload\n"
                 "\n"
-                "# Enfin : ajouter \"%1\" au champ \"roots\" de morfphoto.json, puis redéployer/redémarrer morfPhoto.")
-                .arg(serverRoot, userShown, ipShown, share));
+                "# Enfin : ajouter \"%1\" au champ \"roots\" de morfphoto.json (sans retirer les racines existantes), valider le JSON, puis redémarrer morfPhoto.")
+                .arg(serverRoot, userShown, ipShown, share, credFile));
         } else if (topo == 1) {
             // Ce PC : morfPhoto et les photos sur la même machine. Aucun partage,
             // aucun montage : il suffit de déclarer le dossier local dans roots.
@@ -673,6 +842,78 @@ void MainWindow::showNetworkAccessDialog() {
     });
     connect(copyServerBtn, &QPushButton::clicked, &dlg, [serverCmd]() {
         QGuiApplication::clipboard()->setText(serverCmd->toPlainText());
+    });
+
+    // Un-clic : pousser la source vers morfPhoto (topologie serveur Linux). Remplace
+    // le copier-coller des commandes de l'étape 2.
+    connect(pushBtn, &QPushButton::clicked, &dlg, [&, this]() {
+        if (!m_client->hasBase()) {
+            QMessageBox::information(&dlg, QStringLiteral("Assistant d'accès réseau"),
+                QStringLiteral("Aucun serveur morfPhoto sélectionné. Choisissez-en un dans la "
+                               "barre de PhotoHub, puis réessayez."));
+            return;
+        }
+        const int i = mapCombo->currentIndex();
+        if (i < 0 || i >= m_pathMappings.size())
+            return;
+        if (ip.isEmpty()) {
+            QMessageBox::warning(&dlg, QStringLiteral("Assistant d'accès réseau"),
+                QStringLiteral("Adresse IP de ce PC introuvable : impossible de composer le partage."));
+            return;
+        }
+        const QString localRoot = m_pathMappings[i].first;
+        const QString share     = shareNameFor(localRoot);
+        const QString account   = userEdit->text().trimmed();
+        const QString pwd       = pwdEdit->text();
+        if (account.isEmpty() || pwd.isEmpty()) {
+            QMessageBox::warning(&dlg, QStringLiteral("Assistant d'accès réseau"),
+                QStringLiteral("Renseignez le nom d'utilisateur Windows ET le mot de passe "
+                               "avant d'envoyer la config.\n\n"
+                               "L'identifiant est le nom de session Windows de cette machine "
+                               "(pas l'e-mail Microsoft).\n"
+                               "Compte local : mot de passe de session.\n"
+                               "Compte Microsoft : mot de passe du compte Microsoft.\n"
+                               "Jamais le PIN Windows Hello."));
+            return;
+        }
+        pushBtn->setEnabled(false);
+        stepsView->setPlainText(QStringLiteral("Envoi de la configuration…"));
+        const QString hostname = pc;
+        m_client->pushSource(ip, share, account, pwd, hostname,
+            [this, i, stepsView, pushBtn](bool ok, const QJsonObject& report) {
+                stepsView->setPlainText(formatSourceReport(report));
+                const QString mountpoint = report.value(QStringLiteral("mountpoint")).toString();
+                if (!ok) {
+                    pushBtn->setEnabled(true);
+                    return;
+                }
+                if (!mountpoint.isEmpty() && i >= 0 && i < m_pathMappings.size()) {
+                    m_pathMappings[i].second = mountpoint;
+                    saveMappings();
+                }
+                const bool waitRestart = report.value(QStringLiteral("restart_needed")).toBool();
+                if (waitRestart)
+                    stepsView->appendPlainText(QStringLiteral("\nAttente du redémarrage de morfPhoto…"));
+                m_client->confirmSourceRoot(mountpoint, waitRestart,
+                    [stepsView, pushBtn](bool confirmed, const QJsonObject& extra) {
+                        QString extraText;
+                        extraText += QStringLiteral("\n%1  %2")
+                            .arg(stepLabel(QStringLiteral("service_active")), -38)
+                            .arg(extra.value(QStringLiteral("service_active")).toBool()
+                                     ? QStringLiteral("✓") : QStringLiteral("✗"));
+                        extraText += QStringLiteral("\n%1  %2")
+                            .arg(stepLabel(QStringLiteral("root_in_api")), -38)
+                            .arg(extra.value(QStringLiteral("root_in_api")).toBool()
+                                     ? QStringLiteral("✓") : QStringLiteral("✗"));
+                        if (!confirmed) {
+                            extraText += QStringLiteral(
+                                "\n\nmorfPhoto a redémarré mais la racine est absente de l'API, "
+                                "ou le service n'est pas opérationnel.");
+                        }
+                        stepsView->appendPlainText(extraText);
+                        pushBtn->setEnabled(true);
+                    });
+            });
     });
 
 #ifdef Q_OS_WIN
@@ -852,33 +1093,38 @@ void MainWindow::onFolders(const QJsonArray& folders) {
 void MainWindow::onIndexStatus(const QJsonObject& status) {
     const bool indexing = status.value(QStringLiteral("state")).toString() == QLatin1String("indexing");
     m_progress->setVisible(indexing);
+    // Pendant une passe, interroger plus souvent : un gros dossier ne doit pas
+    // laisser la barre figée 3 secondes d'affilée.
+    m_refresh->setInterval(indexing ? 400 : 3000);
     if (indexing) {
-        // Progression exposée par morfPhoto : le nombre de dossiers donne une barre
-        // DÉTERMINÉE (dénominateur fiable, connu d'avance) ; le compteur de fichiers
-        // matérialise l'avancée à l'intérieur d'un gros dossier. À défaut (morfPhoto
-        // plus ancien, ou tout début de passe), on retombe sur la barre indéterminée.
         const QJsonObject prog = status.value(QStringLiteral("progress")).toObject();
-        const int total = prog.value(QStringLiteral("folders_total")).toInt();
-        const int done  = prog.value(QStringLiteral("folders_done")).toInt();
-
-        if (total > 0) {
-            m_progress->setRange(0, total);
-            m_progress->setValue(done);
-        } else {
-            m_progress->setRange(0, 0);   // indéterminée tant que rien n'est connu
-        }
-
-        const qint64 files = static_cast<qint64>(prog.value(QStringLiteral("files_seen")).toDouble());
-        const QString folder = prog.value(QStringLiteral("current_folder")).toString();
-        QString txt;
-        if (total > 0)
-            txt = QStringLiteral("Indexation… dossier %1/%2 · %3 fichiers")
-                      .arg(done).arg(total).arg(QLocale().toString(files));
-        else
-            txt = QStringLiteral("Indexation en cours…");
-        if (!folder.isEmpty())
-            txt += QStringLiteral(" · %1").arg(QFileInfo(folder).fileName());
+        const int foldersTotal = prog.value(QStringLiteral("folders_total")).toInt();
+        const int foldersDone  = prog.value(QStringLiteral("folders_done")).toInt();
+        const qint64 filesSeen = static_cast<qint64>(
+            prog.value(QStringLiteral("files_seen")).toDouble());
+        const QJsonValue pctVal = prog.value(QStringLiteral("percent"));
+        // Une seule ligne : perception d'avancement. Le bilan (connus, ajoutés…)
+        // n'a de sens qu'une fois la passe close, dans le bloc ci-dessous.
+        const int folderNo = foldersTotal <= 0
+            ? 0
+            : qBound(1, foldersDone < foldersTotal ? foldersDone + 1 : foldersTotal,
+                     foldersTotal);
+        QString txt = QStringLiteral("Indexation…");
+        if (folderNo > 0)
+            txt += QStringLiteral(" dossier %1/%2").arg(folderNo).arg(foldersTotal);
+        txt += QStringLiteral(" · %1 fichiers examinés")
+                   .arg(QLocale().toString(filesSeen));
         m_indexLabel->setText(txt);
+
+        m_progress->setTextVisible(true);
+        if (pctVal.isDouble()) {
+            m_progress->setRange(0, 100);
+            m_progress->setFormat(QStringLiteral("%p%"));
+            m_progress->setValue(qBound(0, qRound(pctVal.toDouble()), 100));
+        } else {
+            m_progress->setRange(0, 0);
+            m_progress->setFormat(QString());
+        }
         return;
     }
     // Cadence de l'indexation automatique (exposée par morfPhoto). Utile pour voir
@@ -907,14 +1153,32 @@ void MainWindow::onIndexStatus(const QJsonObject& status) {
         m_indexLabel->setText(QStringLiteral("Aucune indexation encore exécutée.%1").arg(autoTxt));
         return;
     }
-    m_indexLabel->setText(QStringLiteral(
-        "Dernière passe (%1) : %2 nouveaux · %3 modifiés · %4 disparus · %5 erreurs%6")
-        .arg(run.value(QStringLiteral("mode")).toString())
-        .arg(run.value(QStringLiteral("files_new")).toInt())
-        .arg(run.value(QStringLiteral("files_updated")).toInt())
-        .arg(run.value(QStringLiteral("files_missing")).toInt())
-        .arg(run.value(QStringLiteral("errors_count")).toInt())
-        .arg(autoTxt));
+    const int seen      = run.value(QStringLiteral("files_seen")).toInt();
+    const int created   = run.value(QStringLiteral("files_new")).toInt();
+    const int updated   = run.value(QStringLiteral("files_updated")).toInt();
+    const int missing   = run.value(QStringLiteral("files_missing")).toInt();
+    const int errors    = run.value(QStringLiteral("errors_count")).toInt();
+    const int folders   = run.value(QStringLiteral("folders_total")).toInt();
+    const int unchanged = qMax(0, seen - created - updated);
+    QString summary = QStringLiteral(
+        "Indexation terminée\n"
+        "%1 fichiers examinés\n"
+        "%2 déjà connus\n"
+        "%3 ajoutés\n"
+        "%4 mis à jour\n"
+        "%5 disparus\n"
+        "%6 erreur%7")
+                          .arg(QLocale().toString(seen))
+                          .arg(QLocale().toString(unchanged))
+                          .arg(QLocale().toString(created))
+                          .arg(QLocale().toString(updated))
+                          .arg(QLocale().toString(missing))
+                          .arg(QLocale().toString(errors))
+                          .arg(errors > 1 ? QStringLiteral("s") : QString());
+    if (folders > 0)
+        summary += QStringLiteral("\n%1 dossiers parcourus").arg(folders);
+    summary += autoTxt;
+    m_indexLabel->setText(summary);
 }
 
 void MainWindow::onActionResult(bool ok, const QString& message) {

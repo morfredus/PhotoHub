@@ -3,6 +3,77 @@
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et du [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [0.10.9] - 2026-08-22
+
+### Modifié
+
+- Pendant une passe, une seule ligne d'état (`Indexation… dossier 2/6 · 1 247
+  fichiers examinés`) et la barre en pourcentage. Le bilan (connus, ajoutés,
+  mis à jour, disparus, erreurs) n'apparaît que lorsque la barre disparaît.
+
+## [0.10.8] - 2026-08-22
+
+### Modifié
+
+- Resynchroniser la copie vendorée de morfUpdate vers 0.4.3.
+
+## [0.10.7] - 2026-08-22
+
+### Modifié
+
+- Barre d'indexation : le pourcentage est affiché sur la barre. Première passe explicitement nommée « comptage des fichiers » (sans EXIF), avec un % de dossiers comptés. Ensuite la barre réelle suit `files_seen / files_total`.
+
+## [0.10.6] - 2026-08-22
+
+### Corrigé
+
+- Identifiants SMB validés en réel : **nom d'utilisateur Windows** dans les deux cas ; mot de passe de session (compte local) ou mot de passe **Microsoft** (compte lié). L'e-mail n'est pas l'identifiant SMB. L'assistant distingue les deux situations à côté du champ mot de passe (PIN / Hello / passkey exclus).
+- Barre d'indexation : pourcentage sur les **fichiers** (`percent` de morfPhoto), barre indéterminée pendant la découverte ou si `percent` est `null`. Plus de 33 % / 66 % basés sur le nombre de dossiers. Interrogation plus fréquente pendant une passe. Résumé en fin de passe (examinés, déjà connus, ajoutés, erreurs).
+
+## [0.10.5] - 2026-08-22
+
+### Corrigé
+
+- Déploiement MinGW après le lien : le Bash MSYS2 (déduit du compilateur, jamais du PATH Windows/WSL) reçoit `/usr/bin` et le dossier du `g++` dans `PATH`, pour que `grep`/`awk`/`ldd` existent aussi depuis PowerShell. `windeployqt` est cherché aussi sous `$QT_ROOT/bin`. Aucun `C:/msys64` en dur.
+
+## [0.10.4] - 2026-08-22
+
+### Corrigé
+
+- Autoconfiguration SMB : le hostname du poste est l'identité canonique (`ASUS-DEV` → `/mnt/photos_asus-dev` + `smb-photos-asus-dev.cred`). Plus de fichier générique `smb-photos.cred` ni de point de montage `/mnt/photos` pour une nouvelle source.
+- L'assistant affiche chaque étape (montage, fstab, JSON, redémarrage, `GET /status` et `GET /api/v1/roots`) et refuse un succès global si l'une d'elles échoue. Les erreurs d'authentification SMB sont distinguées des autres causes.
+- Compte Windows local et compte Microsoft sont tous deux acceptés : l'identifiant est le nom de session ou l'e-mail, jamais un PIN ; aucun compte technique dédié n'est exigé.
+
+## [0.10.3] - 2026-08-21
+
+### Modifié
+
+- Assistant d'accès réseau : identifiant ET mot de passe désormais éditables avant l'envoi de la config, et précision qu'ils sont ceux du compte Microsoft connecté (l'identifiant est l'email, pas le nom de profil local). Corrige l'échec d'authentification (STATUS_LOGON_FAILURE) sur les sessions à compte Microsoft.
+
+## [0.10.2] - 2026-08-21
+
+### Ajouté
+
+- Enregistrement des compilations au niveau CMake (record_compile, vendoré) : la durée de compile est signalée à morfAnalytics quel que soit le déclencheur (cmake --build direct, morf upgrade, déploiement morfDeploy).
+
+## [0.10.1] - 2026-08-21
+
+### Corrigé
+
+- Déploiement Windows : déduire le Bash MSYS2 du compilateur MinGW au lieu d'appeler `bash` du PATH, que PowerShell résout vers le Bash WSL (échec « No such file or directory » hors de VSCode). Aligné sur ComponentHub/SiteWatch.
+
+## [0.10.0] - 2026-08-21
+
+### Ajouté
+
+- Bouton « Envoyer la config au serveur morfPhoto » (topologie serveur Linux) : un clic pousse la source SMB au lieu de coller des commandes ; le mappage local s'aligne sur le point de montage choisi par le serveur.
+
+## [0.9.1] - 2026-08-21
+
+### Modifié
+
+- Resynchroniser la copie vendorée de morfUpdate vers 0.4.1.
+
 ## [0.9.0] - 2026-08-17
 
 ### Ajouté

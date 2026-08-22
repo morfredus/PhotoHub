@@ -2,7 +2,7 @@
 
 *Read in another language: **English** (this document) · [Français](README.fr.md).*
 
-[![Version](https://img.shields.io/badge/version-0.9.0-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.10.9-blue)](CHANGELOG.md)
 ![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus)
 ![Qt](https://img.shields.io/badge/Qt-6-41CD52?logo=qt)
 ![Build](https://img.shields.io/badge/CMake-3.21+-064F8C?logo=cmake)
@@ -18,7 +18,7 @@ SQLite. It finds morfPhoto on the LAN by its morfBeacon **capability**
 ```
 Windows workstation                 Linux ARM64 (Raspberry Pi)
 ───────────────────                 ──────────────────────────
-C:\Users\frede\Pictures\  ←── Samba/SMB ───→  /mnt/photos/   (read-only mount)
+C:\Users\frede\Pictures\  ←── Samba/SMB ───→  /mnt/photos_<hostname>/   (read-only mount)
                                                morfPhoto       (indexer, HTTP API)
 PhotoHub  ──────────────────── HTTP /api/v1 ──→ morfPhoto
 ```
@@ -27,7 +27,7 @@ PhotoHub  ──────────────────── HTTP /api
 - morfPhoto mounts the Samba share **read-only** and never writes to Windows folders.
 - PhotoHub runs on Windows and uses a **path mapping** system
   (`File > Path mapping…`) to translate local Windows paths
-  (`C:\Users\frede\Pictures\…`) into Linux mount paths (`/mnt/photos/…`)
+  (`C:\Users\frede\Pictures\…`) into Linux mount paths (`/mnt/photos_<hostname>/…`)
   before sending them to morfPhoto's API.
 
 ## Setting up access (assistant)
@@ -38,10 +38,10 @@ expose the photos depends on where it runs. The **Network access assistant**
 steps. It covers three cases:
 
 - **A Linux server (Raspberry Pi or other), photos shared from this PC.** It creates the
-  **read-only Windows share** in one click (UAC prompt) and generates the **server
-  commands** — install `cifs-utils` if needed, `cifs` mount, `fstab` to make it
-  permanent, and the reminder to add the mount point to `roots` — pre-filled (PC name,
-  IP, account, share name auto-detected).
+  **read-only Windows share** in one click (UAC prompt) and **sends the config**
+  to morfPhoto, which mounts `//IP/share` under `/mnt/photos_<hostname>` with a
+  dedicated credentials file. It also still generates the equivalent server
+  commands (PC name, IP, account, share name auto-detected).
 - **This Windows PC (morfPhoto and photos on the same machine).** No share, no mount:
   the assistant gives the `roots` block for `morfphoto.json` with the local folder
   (forward slashes). No path mapping is needed then.
@@ -50,11 +50,24 @@ steps. It covers three cases:
   `roots` — no mount. The account running the morfPhoto service must have access to the
   share.
 
-For the SMB-from-Linux cases the only thing to type is the **password**: your Windows
-sign-in password (or Microsoft account password). A PIN does not work for network
-access, and Windows rejects an empty password. The share stays **read-only**: morfPhoto
-can never modify your photos. In every case **exiftool** must be installed on the
-morfPhoto machine (otherwise files are indexed but EXIF metadata stays empty).
+For the SMB-from-Linux cases, type the **Windows username of this machine**
+(not the Microsoft email) and the matching password:
+
+- **local account**: Windows session password;
+- **Microsoft-linked account**: password of the associated Microsoft account.
+
+A PIN, Windows Hello, fingerprint, face or a passkey does not work for network
+access. Windows rejects an empty password. You do not need a dedicated local
+account. Problems, SMB status codes (`STATUS_ACCOUNT_LOCKED_OUT`, …) and the
+validated layout (several Windows PhotoHub clients, one morfPhoto on the Pi)
+are documented in the morfSystem notice
+[PHOTOS-SOURCES-RESEAU](https://github.com/morfredus/morfSystem/blob/main/docs/PHOTOS-SOURCES-RESEAU.md).
+The share stays **read-only**. In every case **exiftool**
+must be installed on the morfPhoto machine (otherwise files are indexed but EXIF
+metadata stays empty).
+
+While indexing, PhotoHub shows one status line and a percentage bar. The pass
+breakdown (known, added, errors) comes back when the bar disappears, as a summary.
 
 ## What it does
 

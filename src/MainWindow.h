@@ -96,8 +96,10 @@ private:
     static QString detectPcName();
     static QString detectLanIp();     // première IPv4 privée non-loopback, sinon ""
     static QString detectWindowsUser();
-    // Nom de partage propre dérivé d'un chemin local (dernier segment assaini).
     static QString shareNameFor(const QString& localRoot);
+    // Identite canonique de CE poste (hostname Windows -> slug Linux).
+    static QString canonicalSourceSlug();
+    static QString predictedMountpoint();
 
     BeaconDiscovery* m_discovery;
     MorfPhotoClient* m_client;
