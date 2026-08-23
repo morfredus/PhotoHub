@@ -392,7 +392,7 @@ void MainWindow::showMappingsDialog() {
             "morfPhoto (Linux) accède aux photos via un montage réseau Samba/SMB <b>en lecture seule</b>.<br>"
             "Les fichiers restent sur Windows et ne sont jamais modifiés par morfPhoto.<br><br>"
             "Déclarez ici la correspondance entre votre dossier Windows local et son point de montage Linux.<br>"
-            "Exemple : <b>C:\\Users\\frede\\Pictures</b> → <b>/mnt/photos_&lt;poste&gt;</b>"));
+            "Exemple : <b>C:\\Users\\&lt;vous&gt;\\Pictures</b> → <b>/mnt/photos_&lt;poste&gt;</b>"));
     info->setWordWrap(true);
     layout->addWidget(info);
 

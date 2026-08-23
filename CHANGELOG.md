@@ -3,6 +3,14 @@
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et du [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [0.10.12] - 2026-08-23
+
+### Corrigé
+
+- L'exemple de chemin du dialogue « Mappage de chemins » n'affiche plus un nom
+  d'utilisateur réel (`C:\Users\frede\...`) mais un repère générique
+  (`C:\Users\<vous>\...`), pour ne pas diffuser une valeur propre à un poste.
+
 ## [0.10.11] - 2026-08-23
 
 ### Ajouté
