@@ -3,6 +3,14 @@
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et du [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [0.10.11] - 2026-08-23
+
+### Ajouté
+
+- Avant « Envoyer la config », PhotoHub interroge `GET /api/v1/sources/ready`.
+  Si le helper privilégié de morfPhoto n'est pas démarrable, l'envoi s'arrête
+  sans transmettre le mot de passe.
+
 ## [0.10.10] - 2026-08-23
 
 ### Ajouté

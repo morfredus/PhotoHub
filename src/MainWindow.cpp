@@ -877,9 +877,22 @@ void MainWindow::showNetworkAccessDialog() {
             return;
         }
         pushBtn->setEnabled(false);
-        stepsView->setPlainText(QStringLiteral("Envoi de la configuration…"));
+        stepsView->setPlainText(QStringLiteral("Vérification du serveur morfPhoto…"));
         const QString hostname = pc;
-        m_client->pushSource(ip, share, account, pwd, hostname,
+        m_client->checkSourcesReady(
+            [this, i, stepsView, pushBtn, ip, share, account, pwd, hostname](bool ready, const QJsonObject& readyReport) {
+                if (!ready) {
+                    stepsView->setPlainText(formatSourceReport(readyReport));
+                    pushBtn->setEnabled(true);
+                    QMessageBox::warning(pushBtn->window(), QStringLiteral("PhotoHub"),
+                        readyReport.value(QStringLiteral("detail")).toString(
+                            QStringLiteral("morfPhoto n'est pas pret a monter une source "
+                                           "(helper privilegie). Reinstaller le paquet "
+                                           "morfPhoto sur le serveur.")));
+                    return;
+                }
+                stepsView->setPlainText(QStringLiteral("Envoi de la configuration…"));
+                m_client->pushSource(ip, share, account, pwd, hostname,
             [this, i, stepsView, pushBtn](bool ok, const QJsonObject& report) {
                 stepsView->setPlainText(formatSourceReport(report));
                 const QString mountpoint = report.value(QStringLiteral("mountpoint")).toString();
@@ -913,6 +926,7 @@ void MainWindow::showNetworkAccessDialog() {
                         stepsView->appendPlainText(extraText);
                         pushBtn->setEnabled(true);
                     });
+            });
             });
     });
 

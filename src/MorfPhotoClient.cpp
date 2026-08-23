@@ -101,6 +101,16 @@ void MorfPhotoClient::addFolder(const QString& path, bool removable, const QStri
     });
 }
 
+void MorfPhotoClient::checkSourcesReady(std::function<void(bool, const QJsonObject&)> cb) {
+    send("GET", QStringLiteral("/api/v1/sources/ready"), {}, [this, cb](int s, const QJsonDocument& d) {
+        QJsonObject report = d.object();
+        const bool ok = (s == 200) && report.value(QStringLiteral("ok")).toBool();
+        if (!ok && !report.contains(QStringLiteral("detail")))
+            report[QStringLiteral("detail")] = errorText(d, s);
+        if (cb) cb(ok, report);
+    }, 15000);
+}
+
 void MorfPhotoClient::pushSource(const QString& host, const QString& share, const QString& username,
                                  const QString& password, const QString& hostname,
                                  std::function<void(bool, const QJsonObject&)> cb) {

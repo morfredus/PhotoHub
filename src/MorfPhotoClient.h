@@ -54,6 +54,9 @@ public:
                     const QString& password, const QString& hostname,
                     std::function<void(bool ok, const QJsonObject& report)> cb = {});
 
+    // Controle le helper privilegie cote serveur avant d'envoyer identifiants.
+    void checkSourcesReady(std::function<void(bool ok, const QJsonObject& report)> cb);
+
     // Après un envoi : attend le retour de morfPhoto (si redémarrage) puis
     // vérifie GET /status et GET /api/v1/roots pour la racine attendue.
     void confirmSourceRoot(const QString& mountpoint, bool waitRestart,
