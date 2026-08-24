@@ -3,6 +3,15 @@
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et du [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [0.10.13] - 2026-08-24
+
+### Ajouté
+
+- Section « Aperçu » / « Overview » dans les README (fr + en) avec une capture
+  d'illustration de la fenêtre principale (`docs/pictures/interface.png`) :
+  source morfPhoto, statistiques de la photothèque et dossiers surveillés. Les
+  valeurs, chemins et hôtes sont des données d'exemple anonymisées.
+
 ## [0.10.12] - 2026-08-23
 
 ### Corrigé

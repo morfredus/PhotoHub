@@ -2,7 +2,7 @@
 
 *Lire dans une autre langue : [English](README.md) · **Français** (ce document).*
 
-[![Version](https://img.shields.io/badge/version-0.10.12-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.10.13-blue)](CHANGELOG.md)
 ![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus)
 ![Qt](https://img.shields.io/badge/Qt-6-41CD52?logo=qt)
 ![Build](https://img.shields.io/badge/CMake-3.21+-064F8C?logo=cmake)
@@ -13,6 +13,15 @@ morfPhoto : il ne lit jamais les fichiers, ne lance jamais ExifTool, ne connaît
 SQLite. Il trouve morfPhoto sur le réseau local par sa **capacité** morfBeacon
 (`photo_index`) - aucune adresse codée en dur - et dialogue avec son contrat HTTP
 `/api/v1`.
+
+## Aperçu
+
+![Fenêtre principale de PhotoHub (données d'exemple)](docs/pictures/interface.png)
+
+*Capture d'illustration : la source morfPhoto sélectionnée, les statistiques de la
+photothèque, et les dossiers surveillés avec leur état (support amovible, exclusion
+des analyses). Les valeurs, chemins et hôtes sont des **données d'exemple
+anonymisées**.*
 
 ## Architecture de déploiement type
 
