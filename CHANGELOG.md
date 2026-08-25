@@ -3,6 +3,12 @@
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et du [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [0.10.14] - 2026-08-25
+
+### Modifié
+
+- Resynchronisation de la copie vendorée de morfUpdate vers 0.4.8 (stratégie d'installation `source-bundle` ajoutée au moteur ; aucun changement fonctionnel côté cette application).
+
 ## [0.10.13] - 2026-08-24
 
 ### Ajouté
