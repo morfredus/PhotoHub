@@ -273,4 +273,61 @@ void MorfPhotoClient::fetchCameras(std::function<void(const QJsonArray&)> cb) {
     });
 }
 
+void MorfPhotoClient::fetchContexts(const QString& status, std::function<void(const QJsonArray&)> cb) {
+    QString path = QStringLiteral("/api/v1/contexts");
+    if (!status.isEmpty())
+        path += QStringLiteral("?status=") + status;
+    send("GET", path, {}, [cb](int s, const QJsonDocument& d) {
+        if (cb) cb(s == 200 ? d.object().value(QStringLiteral("items")).toArray() : QJsonArray{});
+    });
+}
+
+void MorfPhotoClient::putContext(const QString& directory, const QString& context,
+                                 const QString& subject, const QString& motif,
+                                 const QString& description,
+                                 std::function<void(bool, const QJsonObject&, const QString&)> cb) {
+    QJsonObject in{{"directory", directory}, {"context", context}, {"subject", subject}};
+    if (!motif.isEmpty())       in["motif"] = motif;
+    if (!description.isEmpty())  in["description"] = description;
+    const QByteArray body = QJsonDocument(in).toJson(QJsonDocument::Compact);
+    send("PUT", QStringLiteral("/api/v1/context"), body, [cb](int s, const QJsonDocument& d) {
+        if (s == 200) { if (cb) cb(true, d.object(), QString()); }
+        else          { if (cb) cb(false, QJsonObject{}, errorText(d, s)); }
+    });
+}
+
+void MorfPhotoClient::fetchDirectorySample(const QString& directory, int limit,
+                                           std::function<void(const QStringList&)> cb) {
+    const QString path = QStringLiteral("/api/v1/photos?directory=%1&page_size=%2")
+        .arg(QString::fromUtf8(QUrl::toPercentEncoding(directory)))
+        .arg(limit);
+    send("GET", path, {}, [cb](int s, const QJsonDocument& d) {
+        QStringList paths;
+        if (s == 200)
+            for (const QJsonValue& v : d.object().value(QStringLiteral("items")).toArray())
+                paths << v.toObject().value(QStringLiteral("path")).toString();
+        if (cb) cb(paths);
+    });
+}
+
+void MorfPhotoClient::fetchThumbnail(const QString& path,
+                                     std::function<void(const QByteArray&)> cb) {
+    // Reponse BINAIRE (image/jpeg) : on n'utilise pas send() (qui parse du JSON), mais
+    // un GET direct dont on lit les octets bruts. 404 (pas de vignette) => octets vides.
+    if (m_base.isEmpty()) { if (cb) cb(QByteArray{}); return; }
+    const QString url = m_base + QStringLiteral("/api/v1/thumbnail?path=")
+        + QString::fromUtf8(QUrl::toPercentEncoding(path));
+    QNetworkRequest req{QUrl(url)};
+    req.setTransferTimeout(15000);
+    QNetworkReply* reply = m_net->get(req);
+    connect(reply, &QNetworkReply::finished, this, [reply, cb]() {
+        reply->deleteLater();
+        const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        QByteArray bytes;
+        if (status == 200)
+            bytes = reply->readAll();
+        if (cb) cb(bytes);
+    });
+}
+
 } // namespace photohub

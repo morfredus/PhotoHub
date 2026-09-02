@@ -2,7 +2,7 @@
 
 *Lire dans une autre langue : [English](README.md) · **Français** (ce document).*
 
-[![Version](https://img.shields.io/badge/version-0.10.14-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.12.0-blue)](CHANGELOG.md)
 ![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus)
 ![Qt](https://img.shields.io/badge/Qt-6-41CD52?logo=qt)
 ![Build](https://img.shields.io/badge/CMake-3.21+-064F8C?logo=cmake)
@@ -89,6 +89,13 @@ barre disparaît, comme bilan.
   jamais supprimés).
 - **Pilote l'indexation** : lancer une passe incrémentale ou complète et suivre son
   état.
+- **Qualifie les journées photographiques** (bouton « Contextes photographiques… ») :
+  déclare, par dossier, un **contexte** (conditions de la séance) et un **sujet**
+  dominant, deux dimensions séparées. Enregistré dans un `.morfphoto.json` à côté des
+  photos (écrit par morfPhoto). Distingue les journées jamais examinées, laissées à
+  `INCONNU`, ou dont le fichier est invalide. Qualification progressive. Un **aperçu**
+  de quelques photos du dossier (vignettes servies par morfPhoto) aide à voir ce que
+  le dossier contient avant de choisir.
 - **Montre la photothèque d'un coup d'œil** : photos présentes, boîtiers, objectifs,
   dossiers actifs, fichiers disparus, et le résultat de la dernière passe.
 - **Mappage de chemins** (`Fichier > Mappage de chemins…`) : traduit automatiquement

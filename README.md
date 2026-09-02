@@ -2,7 +2,7 @@
 
 *Read in another language: **English** (this document) · [Français](README.fr.md).*
 
-[![Version](https://img.shields.io/badge/version-0.10.14-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.12.0-blue)](CHANGELOG.md)
 ![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus)
 ![Qt](https://img.shields.io/badge/Qt-6-41CD52?logo=qt)
 ![Build](https://img.shields.io/badge/CMake-3.21+-064F8C?logo=cmake)
@@ -83,6 +83,12 @@ breakdown (known, added, errors) comes back when the bar disappears, as a summar
 - **Manages the watched folders**: declare a folder, enable/disable it, remove it
   (a soft retire that preserves history - files are marked missing, never deleted).
 - **Drives indexing**: trigger an incremental or full pass and follow its state.
+- **Qualifies photographic days** ("Contextes photographiques…" button): declares,
+  per directory, a **context** (session conditions) and a dominant **subject**, two
+  separate dimensions. Saved to a `.morfphoto.json` next to the photos (written by
+  morfPhoto). Distinguishes days never examined, left `INCONNU`, or whose file is
+  invalid. Progressive qualification. A **preview** of a few photos from the folder
+  (thumbnails served by morfPhoto) helps you see what the folder holds before choosing.
 - **Shows the library at a glance**: photos present, cameras, lenses, active
   folders, missing files, and the result of the last indexing pass.
 - **Path mapping** (`File > Path mapping…`): automatically translates Windows paths

@@ -7,6 +7,7 @@
 #include "MainWindow.h"
 #include "BeaconDiscovery.h"
 #include "MorfPhotoClient.h"
+#include "ContextDialog.h"
 
 #include <QWidget>
 #include <QComboBox>
@@ -195,12 +196,16 @@ void MainWindow::buildUi() {
     srcRow->addWidget(m_sourceCombo);
     m_connLabel = new QLabel;
     srcRow->addWidget(m_connLabel, 1);
+    m_contextsBtn = new QPushButton(QStringLiteral("Contextes photographiques…"));
+    m_contextsBtn->setEnabled(false);   // activé dès qu'un morfPhoto est sélectionné
+    srcRow->addWidget(m_contextsBtn);
     m_analyticsBtn = new QPushButton(QStringLiteral("Analyses avancées…"));
     m_analyticsBtn->setVisible(false);
     srcRow->addWidget(m_analyticsBtn);
     root->addLayout(srcRow);
     connect(m_sourceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onSourceSelected);
+    connect(m_contextsBtn, &QPushButton::clicked, this, &MainWindow::showContextDialog);
     connect(m_analyticsBtn, &QPushButton::clicked, this, &MainWindow::openAnalyticsClicked);
 
     // --- Statistiques ---
@@ -1048,6 +1053,9 @@ void MainWindow::onSourcesChanged() {
     // et l'hôte sont ainsi conservés même quand plusieurs machines du parc tournent.
     const QList<ServiceInfo> analytics = m_discovery->withCapability(QLatin1String(kCapAnalytics));
     m_analyticsBtn->setVisible(!analytics.isEmpty());
+
+    // La qualification des contextes s'appuie sur le morfPhoto sélectionné.
+    m_contextsBtn->setEnabled(!found.isEmpty());
 }
 
 void MainWindow::onSourceSelected(int index) {
@@ -1055,6 +1063,7 @@ void MainWindow::onSourceSelected(int index) {
     const QString url = m_sourceCombo->itemData(index).toString();
     m_client->setBaseUrl(url);
     m_connLabel->setText(QStringLiteral("Connecté à %1").arg(m_sourceCombo->itemText(index)));
+    m_contextsBtn->setEnabled(true);
     m_client->refreshAll();
 }
 
@@ -1722,6 +1731,19 @@ void MainWindow::openAnalyticsClicked() {
     if (!source.isEmpty())
         url += QStringLiteral("?source=") + QString::fromUtf8(QUrl::toPercentEncoding(source));
     QDesktopServices::openUrl(QUrl(url));
+}
+
+void MainWindow::showContextDialog() {
+    if (!m_client->hasBase()) {
+        QMessageBox::information(this, QStringLiteral("Contextes photographiques"),
+            QStringLiteral("Aucun morfPhoto sélectionné. Choisissez-en un dans la barre de "
+                           "PhotoHub, puis réessayez."));
+        return;
+    }
+    // Écran dédié (client de GET /contexts et PUT /context). morfPhoto reste l'unique
+    // écrivain du `.morfphoto.json` ; PhotoHub ne fait que déclarer le contexte.
+    ContextDialog dlg(m_client, this);
+    dlg.exec();
 }
 
 } // namespace photohub

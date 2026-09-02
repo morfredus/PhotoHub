@@ -3,6 +3,32 @@
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et du [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [0.12.0] - 2026-09-02
+
+### Added
+
+- **Folder preview** in the context qualification screen: selecting a day shows a few
+  thumbnails from that folder, so you can see what it actually contains before choosing
+  the context. Thumbnails are served by morfPhoto (`GET /api/v1/thumbnail`, embedded
+  preview via exiftool, JPEG and RAW) after fetching a sample of the folder's files
+  (`GET /api/v1/photos?directory=…`). PhotoHub stays a pure client - it never reads the
+  photo files itself, so the preview also works when morfPhoto and the photos live on
+  another machine. Stale async responses are dropped when the folder changes.
+
+## [0.11.0] - 2026-09-02
+
+### Added
+
+- **Photographic context screen** (contract `morfphoto-context/2`). A new
+  "Contextes photographiques…" window lists the photo directories of the selected
+  morfPhoto (`GET /api/v1/contexts`) with a filter for unqualified / qualified /
+  invalid days. Each day is qualified through two **separate** drop-downs, Contexte
+  (7 values) and Sujet (6 values), plus optional motif and description, and saved via
+  `PUT /api/v1/context` (morfPhoto stays the sole writer of `.morfphoto.json`).
+  Previous/Next buttons enable progressive qualification. The three states stay
+  visually distinct: never examined (unqualified), examined but left INCONNU
+  (qualified), and broken file (invalid).
+
 ## [0.10.14] - 2026-08-25
 
 ### Modifié

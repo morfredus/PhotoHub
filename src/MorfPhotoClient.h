@@ -69,6 +69,23 @@ public:
     void fetchYears(std::function<void(const QJsonArray&)> cb);
     void fetchCameras(std::function<void(const QJsonArray&)> cb);
 
+    // --- Contexte photographique par dossier (morfphoto-context/2) ---
+    // Liste les repertoires + leur contexte (ecran de qualification). `status` vide =
+    // tous ; sinon "qualified" | "unqualified" | "invalid".
+    void fetchContexts(const QString& status, std::function<void(const QJsonArray&)> cb);
+    // Ecrit `.morfphoto.json` d'un repertoire (morfPhoto seul ecrivain). `context` et
+    // `subject` sont obligatoires (contrat V2). `cb` recoit le succes, le contexte
+    // stocke et un message d'erreur eventuel.
+    void putContext(const QString& directory, const QString& context, const QString& subject,
+                    const QString& motif, const QString& description,
+                    std::function<void(bool ok, const QJsonObject& stored, const QString& err)> cb);
+
+    // --- Apercu (les photos restent souveraines chez morfPhoto : PhotoHub ne lit
+    // jamais les fichiers, il demande un echantillon de chemins puis une vignette JPEG) ---
+    void fetchDirectorySample(const QString& directory, int limit,
+                              std::function<void(const QStringList& paths)> cb);
+    void fetchThumbnail(const QString& path, std::function<void(const QByteArray& jpeg)> cb);
+
 signals:
     void summaryReady(const QJsonObject& summary);
     void foldersReady(const QJsonArray& folders);
