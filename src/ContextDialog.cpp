@@ -25,10 +25,16 @@
 #include <QPixmap>
 #include <QImage>
 #include <QFileInfo>
+#include <QJsonDocument>
 
 namespace photohub {
 
 namespace {
+
+// L'objet JSON complet d'une journée, sérialisé sur la cellule de date. Rôle
+// dédié (au-delà de Qt::UserRole qui porte déjà le répertoire) : survit au tri
+// par en-tête, qui casserait tout index de ligne parallèle.
+constexpr int kRowObjectRole = Qt::UserRole + 1;
 
 // Vocabulaires GELÉS du contrat morfphoto-context/2 (mêmes valeurs, même ordre que
 // morfPhoto). Un placeholder en tête laisse une journée non qualifiée sans choix forcé.
@@ -83,11 +89,19 @@ void ContextDialog::buildUi() {
     m_filterCombo->addItem(QStringLiteral("Invalides (à réparer)"), QStringLiteral("invalid"));
     filterRow->addWidget(m_filterCombo);
     filterRow->addStretch(1);
-    auto* reloadBtn = new QPushButton(QStringLiteral("Rafraîchir"));
-    filterRow->addWidget(reloadBtn);
+    // Réindexer sans quitter l'écran : après un ajout de dossiers, une passe
+    // incrémentale puis un rafraîchissement automatique de la liste (voir reindex()).
+    m_reindexBtn = new QPushButton(QStringLiteral("Réindexer (incrémental)"));
+    m_reindexBtn->setToolTip(QStringLiteral(
+        "Demande à morfPhoto une indexation incrémentale, puis recharge la liste "
+        "une fois la passe terminée. Utile après avoir ajouté des journées."));
+    filterRow->addWidget(m_reindexBtn);
+    m_reloadBtn = new QPushButton(QStringLiteral("Rafraîchir"));
+    filterRow->addWidget(m_reloadBtn);
     root->addLayout(filterRow);
     connect(m_filterCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) { reload(); });
-    connect(reloadBtn, &QPushButton::clicked, this, [this]() { reload(); });
+    connect(m_reloadBtn, &QPushButton::clicked, this, [this]() { reload(); });
+    connect(m_reindexBtn, &QPushButton::clicked, this, &ContextDialog::reindex);
 
     m_table = new QTableWidget(0, 5, this);
     m_table->setHorizontalHeaderLabels({QStringLiteral("Date"), QStringLiteral("Photos"),
@@ -100,6 +114,11 @@ void ContextDialog::buildUi() {
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setSelectionMode(QAbstractItemView::SingleSelection);
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    // Tri par clic sur n'importe quel en-tête (Date/nom de dossier, nombre de photos,
+    // contexte, sujet, statut). Le remplissage désactive ce tri le temps d'insérer les
+    // lignes puis le réarme (voir fillTable) : sinon chaque insertion réordonnerait.
+    m_table->setSortingEnabled(true);
+    m_table->horizontalHeader()->setSortIndicatorShown(true);
     // Liste à gauche, aperçu du dossier à droite (les vignettes viennent de morfPhoto).
     auto* midRow = new QHBoxLayout;
     midRow->addWidget(m_table, 2);
@@ -205,14 +224,43 @@ void ContextDialog::reload() {
     });
 }
 
+// Indexation incrémentale déclenchée depuis l'écran, puis rechargement automatique.
+// Les contrôles sont verrouillés le temps de la passe (elle peut être longue sur une
+// source SMB) ; le client attend la vraie fin de passe avant de rappeler.
+void ContextDialog::reindex() {
+    if (m_reindexBtn) m_reindexBtn->setEnabled(false);
+    if (m_reloadBtn)  m_reloadBtn->setEnabled(false);
+    if (m_filterCombo) m_filterCombo->setEnabled(false);
+    setMessage(QStringLiteral("Indexation incrémentale en cours… (cela peut prendre un moment)"));
+    m_client->reindexAndWait(QStringLiteral("incremental"), [this](bool ok, const QString& err) {
+        if (m_reindexBtn) m_reindexBtn->setEnabled(true);
+        if (m_reloadBtn)  m_reloadBtn->setEnabled(true);
+        if (m_filterCombo) m_filterCombo->setEnabled(true);
+        if (!ok) {
+            setMessage(QStringLiteral("Indexation : %1").arg(err), true);
+            return;
+        }
+        // Passe terminée : recharger la liste. reload() est asynchrone et réécrit le
+        // message (« N journée(s). ») à l'arrivée ; les avertissements éventuels d'une
+        // journée restent visibles dans l'info-bulle de sa colonne Statut.
+        reload();
+    });
+}
+
 void ContextDialog::fillTable(const QJsonArray& items) {
-    m_rows = items;
+    // Tri désarmé pendant l'insertion : sinon chaque setItem réordonnerait la table
+    // en pleine construction (lignes qui « sautent »). On le réarme à la fin.
+    m_table->setSortingEnabled(false);
     m_table->clearContents();
     m_table->setRowCount(items.size());
     for (int i = 0; i < items.size(); ++i) {
         const QJsonObject o = items.at(i).toObject();
-        m_table->setItem(i, 0, new QTableWidgetItem(o.value(QStringLiteral("date")).toString()));
-        auto* photos = new QTableWidgetItem(QString::number(o.value(QStringLiteral("photo_count")).toInt()));
+        auto* dateItem = new QTableWidgetItem(o.value(QStringLiteral("date")).toString());
+        m_table->setItem(i, 0, dateItem);
+        // Nombre de photos porté comme ENTIER (pas comme texte) : le tri de la colonne
+        // est alors numérique (125 > 2), pas lexicographique ("125" < "2").
+        auto* photos = new QTableWidgetItem;
+        photos->setData(Qt::DisplayRole, o.value(QStringLiteral("photo_count")).toInt());
         m_table->setItem(i, 1, photos);
         m_table->setItem(i, 2, new QTableWidgetItem(orDash(o.value(QStringLiteral("context")))));
         m_table->setItem(i, 3, new QTableWidgetItem(orDash(o.value(QStringLiteral("subject")))));
@@ -227,10 +275,17 @@ void ContextDialog::fillTable(const QJsonArray& items) {
         if (!warns.isEmpty()) tip += (tip.isEmpty() ? QString() : QStringLiteral("\n")) + warns.join(QStringLiteral(", "));
         if (!tip.isEmpty()) st->setToolTip(tip);
         m_table->setItem(i, 4, st);
-        // Répertoire porté en donnée cachée sur la première cellule (clé du PUT).
-        m_table->item(i, 0)->setData(Qt::UserRole, o.value(QStringLiteral("directory")).toString());
-        m_table->item(i, 0)->setToolTip(o.value(QStringLiteral("directory")).toString());
+        // Répertoire (clé du PUT) et objet complet portés en données cachées sur la
+        // cellule de date : lecture par rôle, robuste au tri (voir rowObject()).
+        dateItem->setData(Qt::UserRole, o.value(QStringLiteral("directory")).toString());
+        dateItem->setToolTip(o.value(QStringLiteral("directory")).toString());
+        storeRowObject(i, o);
     }
+    m_table->setSortingEnabled(true);
+    // Tri par défaut : Date (donc nom de dossier daté) décroissant. Les journées
+    // récentes remontent en tête, pour retrouver et qualifier tout de suite les
+    // derniers dossiers ajoutés au lieu de les chercher au bas d'une longue liste.
+    m_table->sortByColumn(0, Qt::DescendingOrder);
     if (items.size() > 0)
         m_table->selectRow(0);
     else
@@ -239,11 +294,38 @@ void ContextDialog::fillTable(const QJsonArray& items) {
 
 void ContextDialog::onRowSelected() {
     const int row = m_table->currentRow();
-    if (row < 0 || row >= m_rows.size()) {
+    if (row < 0 || !m_table->item(row, 0)) {
         populateEditor(QJsonObject{});
         return;
     }
-    populateEditor(m_rows.at(row).toObject());
+    populateEditor(rowObject(row));
+}
+
+// Objet JSON d'une ligne, relu depuis la cellule de date (sérialisé en JSON compact).
+// La sérialisation garantit le stockage dans QVariant sans dépendre d'un métatype.
+QJsonObject ContextDialog::rowObject(int row) const {
+    const QTableWidgetItem* it = (row >= 0) ? m_table->item(row, 0) : nullptr;
+    if (!it)
+        return {};
+    return QJsonDocument::fromJson(it->data(kRowObjectRole).toString().toUtf8()).object();
+}
+
+void ContextDialog::storeRowObject(int row, const QJsonObject& o) {
+    QTableWidgetItem* it = (row >= 0) ? m_table->item(row, 0) : nullptr;
+    if (!it)
+        return;
+    it->setData(kRowObjectRole,
+                QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact)));
+}
+
+// Ligne visuelle portant ce répertoire (le tri a pu la déplacer depuis le PUT), -1 sinon.
+int ContextDialog::rowForDirectory(const QString& directory) const {
+    for (int r = 0; r < m_table->rowCount(); ++r) {
+        const QTableWidgetItem* it = m_table->item(r, 0);
+        if (it && it->data(Qt::UserRole).toString() == directory)
+            return r;
+    }
+    return -1;
 }
 
 void ContextDialog::populateEditor(const QJsonObject& row) {
@@ -341,8 +423,10 @@ void ContextDialog::loadPreview(const QString& directory) {
 
 void ContextDialog::save() {
     const int row = m_table->currentRow();
-    if (row < 0 || row >= m_rows.size())
+    if (row < 0 || !m_table->item(row, 0))
         return;
+    // Le répertoire (et non l'index de ligne) est la clé stable : le tri peut déplacer
+    // la ligne entre l'envoi et la réponse, on la retrouvera par son dossier.
     const QString directory = m_table->item(row, 0)->data(Qt::UserRole).toString();
     const QString context   = m_ctxCombo->currentData().toString();
     const QString subject   = m_subjCombo->currentData().toString();
@@ -354,35 +438,46 @@ void ContextDialog::save() {
     setMessage(QStringLiteral("Enregistrement…"));
     m_client->putContext(directory, context, subject, m_motif->text().trimmed(),
                          m_desc->toPlainText().trimmed(),
-        [this, row](bool ok, const QJsonObject& stored, const QString& err) {
+        [this, directory](bool ok, const QJsonObject& stored, const QString& err) {
             m_saveBtn->setEnabled(true);
             if (!ok) {
                 setMessage(QStringLiteral("Échec : %1").arg(err), true);
                 return;
             }
             // Fusionner le contexte stocké dans la ligne (garder date/label existants).
-            if (row >= 0 && row < m_rows.size()) {
-                QJsonObject merged = m_rows.at(row).toObject();
+            const int r = rowForDirectory(directory);
+            if (r >= 0) {
+                QJsonObject merged = rowObject(r);
                 for (const QString& k : {QStringLiteral("status"), QStringLiteral("context"),
                         QStringLiteral("subject"), QStringLiteral("motif"),
                         QStringLiteral("description"), QStringLiteral("warnings")})
                     merged[k] = stored.value(k);
-                m_rows[row] = merged;
-                refreshRowCells(row);
+                storeRowObject(r, merged);
+                refreshRowCells(r);
             }
             setMessage(QStringLiteral("Enregistré."));
-            // Qualification progressive : enchaîner sur la journée suivante.
+            // Qualification progressive : enchaîner sur la journée suivante. Repartir de
+            // la ligne réellement enregistrée (un éventuel re-tri a pu la déplacer).
+            const int r2 = rowForDirectory(directory);
+            if (r2 >= 0)
+                m_table->selectRow(r2);
             goRelative(1);
         });
 }
 
 void ContextDialog::refreshRowCells(int row) {
-    if (row < 0 || row >= m_rows.size())
+    if (row < 0 || !m_table->item(row, 2))
         return;
-    const QJsonObject o = m_rows.at(row).toObject();
+    const QJsonObject o = rowObject(row);
+    // Désarmer le tri le temps de réécrire les cellules : modifier une cellule d'une
+    // colonne triée réordonnerait la table sous le curseur. L'appelant re-sélectionne
+    // ensuite la bonne ligne par répertoire.
+    const bool wasSorting = m_table->isSortingEnabled();
+    m_table->setSortingEnabled(false);
     m_table->item(row, 2)->setText(orDash(o.value(QStringLiteral("context"))));
     m_table->item(row, 3)->setText(orDash(o.value(QStringLiteral("subject"))));
     m_table->item(row, 4)->setText(statusLabel(o.value(QStringLiteral("status")).toString()));
+    m_table->setSortingEnabled(wasSorting);
 }
 
 void ContextDialog::goRelative(int delta) {

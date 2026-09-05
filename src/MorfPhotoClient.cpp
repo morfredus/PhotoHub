@@ -112,11 +112,11 @@ void MorfPhotoClient::checkSourcesReady(std::function<void(bool, const QJsonObje
 }
 
 void MorfPhotoClient::pushSource(const QString& host, const QString& share, const QString& username,
-                                 const QString& password, const QString& hostname,
+                                 const QString& password, const QString& hostname, bool writable,
                                  std::function<void(bool, const QJsonObject&)> cb) {
     QJsonObject in{{"host", host}, {"share", share},
                    {"username", username}, {"password", password},
-                   {"hostname", hostname}};
+                   {"hostname", hostname}, {"writable", writable}};
     const QByteArray body = QJsonDocument(in).toJson(QJsonDocument::Compact);
     // Montage CIFS + fstab + JSON : largement au-dela du timeout HTTP usuel.
     send("POST", QStringLiteral("/api/v1/sources"), body, [this, cb](int s, const QJsonDocument& d) {
@@ -245,6 +245,58 @@ void MorfPhotoClient::triggerIndex(const QString& mode) {
     });
 }
 
+void MorfPhotoClient::reindexAndWait(const QString& mode,
+                                    std::function<void(bool, const QString&)> cb) {
+    // Étape 1 : mémoriser l'id de la dernière passe. Une passe crée TOUJOURS une ligne
+    // (même sans nouveau fichier) : voir cet id augmenter = la passe qu'on lance est
+    // finie. Signal fiable, contrairement à l'état seul (course au démarrage du worker).
+    send("GET", QStringLiteral("/api/v1/index/status"), {}, [this, mode, cb](int s, const QJsonDocument& d) {
+        const int baseline = (s == 200)
+            ? d.object().value(QStringLiteral("last_run")).toObject()
+                  .value(QStringLiteral("id")).toInt(-1)
+            : -1;
+
+        // Étape 2 : déclencher. 202 = accepté ; 409 = une passe tourne déjà (on attend
+        // quand même sa fin pour rafraîchir). Tout autre code = échec immédiat.
+        const QByteArray body = QJsonDocument(QJsonObject{{"mode", mode}}).toJson(QJsonDocument::Compact);
+        send("POST", QStringLiteral("/api/v1/index"), body, [this, baseline, cb](int s2, const QJsonDocument& d2) {
+            if (s2 != 202 && s2 != 409) {
+                if (cb) cb(false, errorText(d2, s2));
+                return;
+            }
+
+            // Étape 3 : sonder l'état jusqu'à « idle » ET un id de passe supérieur au
+            // repère. Garde-fou ~10 min (source SMB lente) pour ne jamais rester bloqué.
+            auto* timer = new QTimer(this);
+            timer->setInterval(1500);
+            const auto tries = std::make_shared<int>(0);
+            connect(timer, &QTimer::timeout, this, [this, timer, tries, baseline, cb]() {
+                send("GET", QStringLiteral("/api/v1/index/status"), {},
+                     [timer, tries, baseline, cb](int s3, const QJsonDocument& d3) {
+                    if (s3 == 200) {
+                        const QJsonObject o = d3.object();
+                        const QString state = o.value(QStringLiteral("state")).toString();
+                        const int lastId = o.value(QStringLiteral("last_run")).toObject()
+                                               .value(QStringLiteral("id")).toInt(-1);
+                        if (state == QLatin1String("idle") && lastId > baseline) {
+                            timer->stop();
+                            timer->deleteLater();
+                            if (cb) cb(true, o.value(QStringLiteral("last_error")).toString());
+                            return;
+                        }
+                    }
+                    if (++(*tries) >= 400) {   // 1500 ms * 400 ≈ 10 min
+                        timer->stop();
+                        timer->deleteLater();
+                        if (cb) cb(false, QStringLiteral("délai d'indexation dépassé"));
+                    }
+                }, 8000, true);
+            });
+            timer->start();
+        });
+    });
+}
+
 void MorfPhotoClient::purge(const QString& scope, const QVariant& value) {
     QJsonObject in{{"scope", scope}};
     if (value.isValid() && !value.isNull())
@@ -298,9 +350,15 @@ void MorfPhotoClient::putContext(const QString& directory, const QString& contex
 
 void MorfPhotoClient::fetchDirectorySample(const QString& directory, int limit,
                                            std::function<void(const QStringList&)> cb) {
-    const QString path = QStringLiteral("/api/v1/photos?directory=%1&page_size=%2")
-        .arg(QString::fromUtf8(QUrl::toPercentEncoding(directory)))
-        .arg(limit);
+    // ATTENTION : ne PAS construire cette URL avec des `.arg()` chaînés. Le répertoire
+    // encodé contient des `%2F` (les `/`), `%20`, `%2C`... et QString::arg lit `%2F`
+    // comme le marqueur `%2` suivi d'un `F`. Un second `.arg(limit)` réécrivait alors
+    // tous ces `%2` (ex. `%2Fmnt` -> `6Fmnt`), corrompant le chemin : le serveur ne
+    // trouvait aucune photo et l'aperçu restait vide. Concaténation simple = pas de
+    // re-balayage des marqueurs, l'encodage du chemin est préservé tel quel.
+    const QString path = QStringLiteral("/api/v1/photos?directory=")
+        + QString::fromUtf8(QUrl::toPercentEncoding(directory))
+        + QStringLiteral("&page_size=") + QString::number(limit);
     send("GET", path, {}, [cb](int s, const QJsonDocument& d) {
         QStringList paths;
         if (s == 200)

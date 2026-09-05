@@ -3,6 +3,67 @@
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et du [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [0.15.0] - 2026-09-05
+
+### Added
+
+- **"Source qualifiable" option in the network assistant.** When sending a source
+  config to morfPhoto, a checkbox (on by default) requests a read/write mount so
+  morfPhoto can write the `.morfphoto.json` context sidecar beside the photos - it
+  writes only that sidecar, never the photos. Unchecking it keeps an archive mounted
+  read-only (not qualifiable). Without this, qualification failed with a read-only
+  filesystem error, since sources were always mounted read-only. `pushSource` now
+  sends the `writable` flag; a source that is mounted read/write but whose Windows
+  share denies writes now reports a clear error at push time (write probe on the
+  server) rather than only when a context save later fails.
+
+## [0.14.0] - 2026-09-05
+
+### Added
+
+- **Re-index from the context screen.** A "Réindexer (incrémental)" button on the
+  qualification screen asks morfPhoto for an incremental pass and reloads the list once
+  it finishes, so the "add days -> index -> qualify" loop no longer means leaving the
+  window. The client waits for the pass to actually complete before refreshing: it
+  records the last run id, triggers the pass (accepting 202, and 409 when one is already
+  running), then polls `GET /api/v1/index/status` until the service is idle with a new
+  run id (a pass always writes a run row, even an empty one, so a rising id is a reliable
+  end signal), with a ~10 min safety cap for slow SMB sources. The controls are locked
+  for the duration and a progress message is shown.
+
+## [0.13.0] - 2026-09-05
+
+### Fixed
+
+- **Folder preview now works.** The preview shipped in 0.12.0 never actually loaded a
+  thumbnail: the request URL was built with chained `QString::arg()`, and the
+  percent-encoded directory (full of `%2F` for each `/`) collided with the `%2`
+  place marker of the second argument. `arg(limit)` rewrote every `%2F` into `<limit>F`
+  (`%2Fmnt` -> `6Fmnt`), so morfPhoto received a corrupted path, matched no photo, and
+  the panel always showed "Aucun aperçu". The query is now assembled by plain
+  concatenation, leaving the encoded path untouched. The server side was healthy
+  throughout (`GET /api/v1/photos?directory=…` and `GET /api/v1/thumbnail` both return
+  correctly).
+
+### Added
+
+- **Sortable context table.** The qualification table can now be sorted by clicking any
+  header - date (folder name), photo count, context, subject or status. Sorting was
+  previously frozen. The photo count sorts numerically (125 > 2), not as text. The
+  default sort is by date **descending**, so the most recent days rise to the top: newly
+  indexed folders are found and qualified straight away instead of being buried at the
+  bottom of a long list. Row lookups (selection, save, advance) key on the directory
+  rather than a fixed row index, so they stay correct across any sort order.
+
+### Notes
+
+- Incremental indexing was investigated and confirmed working: on the reference host all
+  subfolders of a recent year, including the newest day, are indexed with photo counts
+  matching disk exactly, and the last incremental pass added several hundred new files.
+  New folders appearing "missing" in the context screen was the frozen ascending sort
+  hiding recent days at the bottom of the list - addressed by the sort default above.
+- arm64 packages cross-compiled from WSL install and run correctly, verified on the Pi.
+
 ## [0.12.0] - 2026-09-02
 
 ### Added

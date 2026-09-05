@@ -708,6 +708,22 @@ void MainWindow::showNetworkAccessDialog() {
     pushHint->setStyleSheet(QStringLiteral("color:#99a1ad;"));
     layout->addWidget(pushHint);
 
+    // Source qualifiable : montage en lecture/écriture pour que morfPhoto puisse écrire
+    // le contexte (.morfphoto.json) à côté des photos. Coché par défaut (cas courant :
+    // ta photothèque). Décoche pour une archive à protéger en lecture seule.
+    auto* writableChk = new QCheckBox(
+        QStringLiteral("Source qualifiable (autoriser l'écriture du contexte)"));
+    writableChk->setChecked(true);
+    layout->addWidget(writableChk);
+    auto* writableHint = new QLabel(QStringLiteral(
+        "Monte le partage en lecture/écriture pour que morfPhoto y écrive le fichier "
+        "de contexte <code>.morfphoto.json</code> - il n'écrit que ce fichier, jamais "
+        "tes photos. Décoche pour une archive à garder en lecture seule (elle ne sera "
+        "alors pas qualifiable). Le partage Windows doit autoriser l'écriture à ce compte."));
+    writableHint->setWordWrap(true);
+    writableHint->setStyleSheet(QStringLiteral("color:#99a1ad;"));
+    layout->addWidget(writableHint);
+
     // Note mot de passe : utile seulement pour un montage SMB depuis Linux (fichier
     // d'identifiants). Masquée dans les autres cas.
     auto* note = new QLabel(QStringLiteral(
@@ -884,8 +900,9 @@ void MainWindow::showNetworkAccessDialog() {
         pushBtn->setEnabled(false);
         stepsView->setPlainText(QStringLiteral("Vérification du serveur morfPhoto…"));
         const QString hostname = pc;
+        const bool writable = writableChk->isChecked();
         m_client->checkSourcesReady(
-            [this, i, stepsView, pushBtn, ip, share, account, pwd, hostname](bool ready, const QJsonObject& readyReport) {
+            [this, i, stepsView, pushBtn, ip, share, account, pwd, hostname, writable](bool ready, const QJsonObject& readyReport) {
                 if (!ready) {
                     stepsView->setPlainText(formatSourceReport(readyReport));
                     pushBtn->setEnabled(true);
@@ -897,7 +914,7 @@ void MainWindow::showNetworkAccessDialog() {
                     return;
                 }
                 stepsView->setPlainText(QStringLiteral("Envoi de la configuration…"));
-                m_client->pushSource(ip, share, account, pwd, hostname,
+                m_client->pushSource(ip, share, account, pwd, hostname, writable,
             [this, i, stepsView, pushBtn](bool ok, const QJsonObject& report) {
                 stepsView->setPlainText(formatSourceReport(report));
                 const QString mountpoint = report.value(QStringLiteral("mountpoint")).toString();

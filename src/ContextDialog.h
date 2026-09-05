@@ -43,6 +43,7 @@ public:
 private:
     void buildUi();
     void reload();                                   // recharge selon le filtre courant
+    void reindex();                                  // indexe (incrémental) puis recharge
     void onRowSelected();                            // remplit l'éditeur depuis la ligne
     void populateEditor(const QJsonObject& row);
     void save();                                     // PUT /api/v1/context
@@ -54,9 +55,19 @@ private:
     void setMessage(const QString& msg, bool error = false);
     QString filterStatus() const;                    // "" | qualified | unqualified | invalid
 
+    // Le tri par en-tête (clic) réordonne les lignes visuelles : on ne peut plus se
+    // fier à un index de ligne stable. Chaque ligne porte donc SON objet JSON et son
+    // répertoire sur la cellule de date (rôles utilisateur), et ces accès passent par
+    // ces trois aides plutôt que par un tableau parallèle aligné sur les lignes.
+    QJsonObject rowObject(int row) const;            // objet de la ligne (rôle caché)
+    void storeRowObject(int row, const QJsonObject& o);
+    int rowForDirectory(const QString& directory) const;   // ligne visuelle d'un dossier, -1 sinon
+
     MorfPhotoClient* m_client;
 
     QComboBox*      m_filterCombo = nullptr;
+    QPushButton*    m_reindexBtn  = nullptr;
+    QPushButton*    m_reloadBtn   = nullptr;
     QTableWidget*   m_table       = nullptr;
     QComboBox*      m_ctxCombo    = nullptr;
     QComboBox*      m_subjCombo   = nullptr;
@@ -73,8 +84,6 @@ private:
     QWidget*        m_previewContent = nullptr;
     QGridLayout*    m_previewGrid    = nullptr;
     int             m_previewGen     = 0;   // garde de sequence (reponses async perimees)
-
-    QJsonArray      m_rows;   // aligné sur les lignes du tableau
 };
 
 } // namespace photohub

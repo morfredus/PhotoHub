@@ -46,12 +46,21 @@ public:
     void removeFolder(int folderId);
     void restoreFolder(int folderId);                  // annule un retrait doux
     void triggerIndex(const QString& mode);            // "incremental" | "full"
+    // Lance une indexation ("incremental" | "full") PUIS attend la fin de la passe
+    // avant de rappeler `cb`. Sonde /api/v1/index/status jusqu'a idle + nouvel id de
+    // passe (une passe cree toujours une ligne, meme vide : l'id qui augmente = passe
+    // terminee). `err` porte last_error eventuel en cas de succes, ou la cause d'echec.
+    // Utile a l'ecran Contextes : reindexer puis rafraichir la liste sans quitter.
+    void reindexAndWait(const QString& mode,
+                        std::function<void(bool ok, const QString& err)> cb);
 
     // Envoie une source SMB à monter côté serveur. Une machine = un hostname =
     // un point de montage /mnt/photos_<slug>. Le mot de passe ne transite qu'une
-    // fois. `cb` reçoit le rapport d'étapes (succès ou échec partiel).
+    // fois. `writable` : source qualifiable, montée en lecture/écriture pour que
+    // morfPhoto y écrive le sidecar `.morfphoto.json` (jamais les photos) ; false =
+    // archive en lecture seule. `cb` reçoit le rapport d'étapes (succès ou échec).
     void pushSource(const QString& host, const QString& share, const QString& username,
-                    const QString& password, const QString& hostname,
+                    const QString& password, const QString& hostname, bool writable,
                     std::function<void(bool ok, const QJsonObject& report)> cb = {});
 
     // Controle le helper privilegie cote serveur avant d'envoyer identifiants.
