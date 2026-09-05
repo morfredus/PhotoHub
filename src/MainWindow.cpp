@@ -573,8 +573,10 @@ void MainWindow::showNetworkAccessDialog() {
     const QString user = detectWindowsUser();
 
     auto* intro = new QLabel(QStringLiteral(
-        "Cet assistant prépare l'accès de morfPhoto à vos photos, <b>en lecture seule</b> "
-        "(morfPhoto ne déplace ni ne modifie jamais vos fichiers). morfPhoto peut tourner "
+        "Cet assistant prépare l'accès de morfPhoto à vos photos. Par défaut en "
+        "<b>lecture seule</b> ; pour qualifier vos journées, cochez « Source qualifiable » "
+        "(morfPhoto écrit alors le seul fichier de contexte <code>.morfphoto.json</code>, "
+        "jamais vos photos). morfPhoto peut tourner "
         "sur un serveur Linux (Raspberry Pi ou autre), sur ce PC, ou sur un autre PC "
         "Windows : <b>choisissez la situation</b>, les étapes s'adaptent."));
     intro->setWordWrap(true);
@@ -763,6 +765,14 @@ void MainWindow::showNetworkAccessDialog() {
         const int topo = topoCombo->currentIndex();
         const bool needShare = (topo == 0 || topo == 2);   // photos partagées depuis ce PC
         const bool linuxMount = (topo == 0);               // montage cifs + fichier d'identifiants
+        // Source qualifiable : partage/montage en lecture/écriture pour que morfPhoto y
+        // écrive le sidecar de contexte. Sinon lecture seule (archive). Choix sans objet
+        // quand morfPhoto est sur cette machine (topo 1) : il écrit alors en local.
+        const bool writable = writableChk->isChecked();
+        const QString shareRight = writable ? QStringLiteral("CHANGE") : QStringLiteral("READ");
+        const QString shareRemark = writable ? QStringLiteral("morfPhoto - lecture/ecriture (qualification)")
+                                             : QStringLiteral("morfPhoto - lecture seule");
+        const QString cifsMode = writable ? QStringLiteral("rw") : QStringLiteral("ro");
 
         const QString localRoot  = m_pathMappings[i].first;
         const QString share = shareNameFor(localRoot);
@@ -782,15 +792,20 @@ void MainWindow::showNetworkAccessDialog() {
         else if (topo == 1) serverRoot = QDir::fromNativeSeparators(localRoot);
         else                serverRoot = QStringLiteral("//%1/%2").arg(pcShown, share);
 
-        // Étape 1 (partage) : visible seulement quand morfPhoto est ailleurs.
+        // Étape 1 (partage) : visible seulement quand morfPhoto est ailleurs. La case
+        // « Source qualifiable » ne concerne que ce cas (un partage est créé).
         step1Label->setVisible(needShare);
         winCmd->setVisible(needShare);
         createBtn->setVisible(needShare);
         copyWinBtn->setVisible(needShare);
+        writableChk->setVisible(needShare);
+        writableHint->setVisible(needShare);
         if (needShare)
+            // À lancer dans une invite ADMINISTRATEUR (net share exige l'élévation ;
+            // sinon « erreur système 5 »). CHANGE = écriture (qualification) ; READ = archive.
             winCmd->setPlainText(QStringLiteral(
-                "net share %1=\"%2\" /GRANT:%3,READ /REMARK:\"morfPhoto - lecture seule\"")
-                .arg(share, QDir::toNativeSeparators(localRoot), userShown));
+                "net share %1=\"%2\" /GRANT:%3,%4 /REMARK:\"%5\"")
+                .arg(share, QDir::toNativeSeparators(localRoot), userShown, shareRight, shareRemark));
 
         // Note mot de passe : seulement pour le montage Linux (fichier d'identifiants).
         note->setVisible(linuxMount);
@@ -804,8 +819,8 @@ void MainWindow::showNetworkAccessDialog() {
         stepsView->setVisible(topo == 0);
 
         if (topo == 0) {
-            // Serveur Linux : installer cifs-utils au besoin, monter en lecture seule,
-            // rendre le montage permanent, puis déclarer la racine dans morfphoto.json.
+            // Serveur Linux : installer cifs-utils au besoin, monter (ro ou rw selon la
+            // case « qualifiable »), rendre le montage permanent, déclarer la racine.
             // uid/gid 1000 = utilisateur du service morfPhoto (à vérifier avec `id`).
             step2Label->setText(QStringLiteral("<b>Étape 2 — sur le serveur Linux (à coller dans un terminal)</b>"));
             serverCmd->setPlainText(QStringLiteral(
@@ -817,15 +832,15 @@ void MainWindow::showNetworkAccessDialog() {
                 "EOF\n"
                 "sudo chmod 600 %5\n"
                 "sudo chown root:root %5\n"
-                "sudo mount -t cifs //%3/%4 %1 -o credentials=%5,ro,uid=1000,gid=1000,iocharset=utf8,vers=3.0\n"
+                "sudo mount -t cifs //%3/%4 %1 -o credentials=%5,%6,uid=1000,gid=1000,iocharset=utf8,vers=3.0\n"
                 "findmnt -t cifs %1 && ls %1\n"
                 "\n"
                 "# Montage permanent (au redémarrage), seulement après validation :\n"
-                "echo '//%3/%4 %1 cifs credentials=%5,ro,uid=1000,gid=1000,iocharset=utf8,vers=3.0,nofail,x-systemd.automount 0 0' | sudo tee -a /etc/fstab\n"
+                "echo '//%3/%4 %1 cifs credentials=%5,%6,uid=1000,gid=1000,iocharset=utf8,vers=3.0,nofail,x-systemd.automount 0 0' | sudo tee -a /etc/fstab\n"
                 "sudo systemctl daemon-reload\n"
                 "\n"
                 "# Enfin : ajouter \"%1\" au champ \"roots\" de morfphoto.json (sans retirer les racines existantes), valider le JSON, puis redémarrer morfPhoto.")
-                .arg(serverRoot, userShown, ipShown, share, credFile));
+                .arg(serverRoot, userShown, ipShown, share, credFile, cifsMode));
         } else if (topo == 1) {
             // Ce PC : morfPhoto et les photos sur la même machine. Aucun partage,
             // aucun montage : il suffit de déclarer le dossier local dans roots.
@@ -856,6 +871,8 @@ void MainWindow::showNetworkAccessDialog() {
     };
     connect(topoCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), &dlg, [refresh](int){ refresh(); });
     connect(mapCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), &dlg, [refresh](int){ refresh(); });
+    // Basculer « Source qualifiable » réécrit aussitôt les commandes affichées (ro/rw).
+    connect(writableChk, &QCheckBox::toggled, &dlg, [refresh](bool){ refresh(); });
     refresh();
 
     connect(copyWinBtn, &QPushButton::clicked, &dlg, [winCmd]() {
@@ -968,17 +985,30 @@ void MainWindow::showNetworkAccessDialog() {
         }
         // Échapper les apostrophes pour PowerShell (doublage).
         const auto psq = [](QString s) { return s.replace(QLatin1Char('\''), QStringLiteral("''")); };
-        // Script élévé : crée le partage, ou (s'il existe) garantit l'accès lecture.
+        // Source qualifiable : partage en écriture (Change) + NTFS Modify pour le compte,
+        // afin que morfPhoto puisse écrire le sidecar de contexte. Sinon lecture seule.
+        const bool writable = writableChk->isChecked();
+        const QString accessRight   = writable ? QStringLiteral("Change") : QStringLiteral("Read");
+        const QString newAccessArg  = writable ? QStringLiteral("-ChangeAccess") : QStringLiteral("-ReadAccess");
+        const QString shareDesc     = writable ? QStringLiteral("morfPhoto - lecture/ecriture (qualification)")
+                                               : QStringLiteral("morfPhoto - lecture seule");
+        // NTFS : accorder Modify au compte quand on veut l'écriture (le droit de partage
+        // seul ne suffit pas ; l'effectif est le plus restrictif des deux).
+        const QString ntfsLine = writable
+            ? QStringLiteral("icacls $p /grant \"$($u):(OI)(CI)M\" | Out-Null\n")
+            : QString();
+        // Script élévé : crée le partage, ou (s'il existe) garantit le bon niveau d'accès.
         const QString script = QStringLiteral(
             "$ErrorActionPreference='Stop'\n"
             "$n='%1'; $p='%2'; $u='%3'\n"
             "if (Get-SmbShare -Name $n -ErrorAction SilentlyContinue) {\n"
-            "  Grant-SmbShareAccess -Name $n -AccountName $u -AccessRight Read -Force | Out-Null\n"
+            "  Grant-SmbShareAccess -Name $n -AccountName $u -AccessRight %4 -Force | Out-Null\n"
             "} else {\n"
-            "  New-SmbShare -Name $n -Path $p -ReadAccess $u -Description 'morfPhoto - lecture seule' | Out-Null\n"
+            "  New-SmbShare -Name $n -Path $p %5 $u -Description '%6' | Out-Null\n"
             "}\n"
+            "%7"
             "Write-Host 'Partage pret'\n")
-            .arg(psq(share), psq(localRoot), psq(userShown));
+            .arg(psq(share), psq(localRoot), psq(userShown), accessRight, newAccessArg, shareDesc, ntfsLine);
         const QString scriptPath = QDir(QDir::tempPath()).filePath(QStringLiteral("photohub-share.ps1"));
         QFile f(scriptPath);
         if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
@@ -997,8 +1027,10 @@ void MainWindow::showNetworkAccessDialog() {
         if (ok)
             QMessageBox::information(&dlg, QStringLiteral("Assistant d'accès réseau"),
                 QStringLiteral("Une fenêtre d'autorisation (UAC) va s'ouvrir pour créer le "
-                               "partage « %1 » en lecture seule.\n\nAcceptez-la, puis passez à "
-                               "l'étape 2 sur le Pi.").arg(share));
+                               "partage « %1 » (%2).\n\nAcceptez-la, puis passez à "
+                               "l'étape 2 sur le Pi.")
+                    .arg(share, writable ? QStringLiteral("lecture/écriture, qualification")
+                                         : QStringLiteral("lecture seule")));
         else
             QMessageBox::warning(&dlg, QStringLiteral("Assistant d'accès réseau"),
                 QStringLiteral("Lancement de PowerShell impossible. Créez le partage à la main "

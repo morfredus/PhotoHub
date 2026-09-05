@@ -3,6 +3,24 @@
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et du [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [0.16.0] - 2026-09-05
+
+### Changed
+
+- **The network assistant now generates share commands that match the "Source
+  qualifiable" choice.** Previously it always produced a read-only share
+  (`net share … /GRANT:<user>,READ … "lecture seule"`, and `New-SmbShare -ReadAccess`),
+  which made qualification impossible even after checking the box. When the source is
+  qualifiable, the assistant now:
+  - the manual `net share` line grants `CHANGE` (and its comment notes it must run in an
+    elevated prompt - the cause of the "erreur système 5" when run un-elevated);
+  - the one-click "Créer le partage" elevated script grants `Change` (or creates the
+    share with `-ChangeAccess`) and also grants NTFS `Modify` to the account (share and
+    NTFS rights are ANDed; both must allow writes);
+  - the manual Linux step-2 mount and fstab lines use `rw` instead of `ro`.
+  Read-only remains the default when the box is unchecked (archives). The commands
+  update live when the checkbox is toggled.
+
 ## [0.15.0] - 2026-09-05
 
 ### Added
