@@ -356,9 +356,13 @@ void MorfPhotoClient::fetchDirectorySample(const QString& directory, int limit,
     // tous ces `%2` (ex. `%2Fmnt` -> `6Fmnt`), corrompant le chemin : le serveur ne
     // trouvait aucune photo et l'aperçu restait vide. Concaténation simple = pas de
     // re-balayage des marqueurs, l'encodage du chemin est préservé tel quel.
+    // `sample` (et non `page_size`) : morfPhoto renvoie un echantillon REPARTI sur tout
+    // le dossier, dedupliue par radical (jamais le RAW ET le JPEG d'une meme prise).
+    // Les N premieres photos se suivent souvent (meme scene) et donneraient un apercu
+    // peu representatif.
     const QString path = QStringLiteral("/api/v1/photos?directory=")
         + QString::fromUtf8(QUrl::toPercentEncoding(directory))
-        + QStringLiteral("&page_size=") + QString::number(limit);
+        + QStringLiteral("&sample=") + QString::number(limit);
     send("GET", path, {}, [cb](int s, const QJsonDocument& d) {
         QStringList paths;
         if (s == 200)

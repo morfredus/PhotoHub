@@ -3,6 +3,16 @@
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et du [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [0.16.1] - 2026-09-06
+
+### Changed
+
+- **The folder preview now shows a representative sample.** It asks morfPhoto for a
+  spread, RAW/JPEG-deduplicated sample (`&sample=N`) instead of the first N photos
+  (`&page_size=N`). The first photos of a folder often follow one another - the same
+  shot's RAW and JPEG, or a burst - which made the preview repetitive and
+  unrepresentative. The sampling itself lives in morfPhoto (0.14.0).
+
 ## [0.16.0] - 2026-09-05
 
 ### Changed
