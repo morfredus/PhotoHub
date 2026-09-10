@@ -3,6 +3,15 @@
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et du [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [0.16.3] - 2026-09-10
+
+### Fixed — update dialog offered the checksums file instead of the binary
+
+- Resynced vendored morfUpdate to 0.6.0. The "Check for updates" dialog now picks
+  the release asset matching the running OS and CPU architecture (the Windows
+  `.zip`, the arch-matched Linux `.deb`/`.AppImage`) instead of the first asset,
+  which was often `checksums.sha256`. No API change.
+
 ## [0.16.2] - 2026-09-07
 
 ### Changed
