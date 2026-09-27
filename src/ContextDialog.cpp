@@ -54,7 +54,7 @@ QString statusLabel(const QString& status) {
 }
 
 QString orDash(const QJsonValue& v) {
-    return (v.isNull() || v.toString().isEmpty()) ? QStringLiteral("—") : v.toString();
+    return (v.isNull() || v.toString().isEmpty()) ? QStringLiteral("-") : v.toString();
 }
 
 } // namespace
@@ -148,11 +148,11 @@ void ContextDialog::buildUi() {
 
     auto* form = new QFormLayout;
     m_ctxCombo = new QComboBox;
-    m_ctxCombo->addItem(QStringLiteral("— à choisir —"), QString());
+    m_ctxCombo->addItem(QStringLiteral("- à choisir -"), QString());
     for (const QString& c : kContexts)
         m_ctxCombo->addItem(c, c);
     m_subjCombo = new QComboBox;
-    m_subjCombo->addItem(QStringLiteral("— à choisir —"), QString());
+    m_subjCombo->addItem(QStringLiteral("- à choisir -"), QString());
     for (const QString& s : kSubjects)
         m_subjCombo->addItem(s, s);
     m_motif = new QLineEdit;

@@ -1,36 +1,39 @@
 #!/usr/bin/env bash
-# Resynchronise la copie vendoree de morfUpdate dans third_party/morf/update
-# depuis le depot source voisin. PhotoHub n'embarque que morfUpdate (verification
-# des mises a jour) ; la decouverte morfBeacon est un simple ecouteur UDP, sans
-# bibliotheque a vendorer.
+# Resynchronise les copies vendorées de morfBeacon / morfUpdate dans
+# third_party/morf/ depuis les dépôts sources voisins.
 #
-# Source par defaut : le dossier parent du projet. Surcharge : MORF_SRC_BASE=...
+# Source par défaut : le dossier parent du projet (ex. 01-Travail/).
+# Surcharge possible : MORF_SRC_BASE=/chemin/vers/les/depots scripts/sync-morf.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"           # racine du projet
 SRC_BASE="${MORF_SRC_BASE:-$(cd "$ROOT/.." && pwd)}"
 
-if [ -d "$SRC_BASE/morfUpdate" ]; then
-  SRC="$SRC_BASE/morfUpdate"
-else
-  SRC="$SRC_BASE/morfUpdate_travail"
-fi
-DST="$ROOT/third_party/morf/update"
+sync_one() {
+  local name="$1" srcdir="$2" dstdir="$3"
+  if [ ! -d "$srcdir" ]; then
+    echo "!! Source introuvable pour $name : $srcdir" >&2
+    echo "   (définir MORF_SRC_BASE si les dépôts sont ailleurs)" >&2
+    return 1
+  fi
+  rm -rf "$dstdir/include" "$dstdir/src"
+  cp -r "$srcdir/include" "$dstdir/include"
+  cp -r "$srcdir/src"     "$dstdir/src"
+  cp    "$srcdir/VERSION" "$dstdir/VERSION"
+  echo "OK  $name  (version $(cat "$dstdir/VERSION"))"
+}
 
-if [ ! -d "$SRC" ]; then
-  echo "!! Source introuvable pour morfUpdate : $SRC" >&2
-  echo "   (definir MORF_SRC_BASE si les depots sont ailleurs)" >&2
-  exit 1
-fi
+# Le dépôt source peut s'appeler « morfBeacon » ou « morfBeacon_travail » selon
+# l'organisation locale des clones : on prend le premier trouvé, sinon le script
+# échouait silencieusement sur une copie de travail suffixée.
+resolve_src() {
+  local name="$1"
+  if [ -d "$SRC_BASE/$name" ]; then echo "$SRC_BASE/$name"; else echo "$SRC_BASE/${name}_travail"; fi
+}
 
-# Le CMakeLists vendore est volontairement allege : on ne recopie que include/,
-# src/ et VERSION, jamais le CMakeLists (comme pour morfBeacon).
-rm -rf "$DST/include" "$DST/src"
-cp -r "$SRC/include" "$DST/include"
-cp -r "$SRC/src"     "$DST/src"
-cp    "$SRC/VERSION" "$DST/VERSION"
-echo "OK  morfUpdate  (version $(cat "$DST/VERSION"))"
+sync_one morfBeacon "$(resolve_src morfBeacon)" "$ROOT/third_party/morf/beacon"
+sync_one morfUpdate "$(resolve_src morfUpdate)" "$ROOT/third_party/morf/update"
 # Coeur de deploiement (morfdeploy) : vendore UNIQUEMENT pour l'enregistrement des
 # compilations (record_compile.cmake/.py, appele par le CMakeLists). Source de
 # verite : depot « morfDeploy » (ou son clone de travail).
@@ -49,4 +52,4 @@ if [ -d "$DEPLOY_SRC" ]; then
 else
   echo "!! Source introuvable pour morfdeploy : $DEPLOY_SRC" >&2
 fi
-echo "Synchronisation terminee. Le CMakeLists vendore n'est pas modifie."
+echo "Synchronisation terminée. Le CMakeLists vendoré n'est pas modifié."

@@ -2,7 +2,7 @@
 
 *Read in another language: **English** (this document) · [Français](README.fr.md).*
 
-[![Version](https://img.shields.io/badge/version-0.16.5-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.16.8-blue)](CHANGELOG.md)
 ![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus)
 ![Qt](https://img.shields.io/badge/Qt-6-41CD52?logo=qt)
 ![Build](https://img.shields.io/badge/CMake-3.21+-064F8C?logo=cmake)
@@ -55,7 +55,7 @@ steps. It covers three cases:
   (forward slashes). No path mapping is needed then.
 - **Another Windows PC, photos shared from this PC.** It creates the share here, then
   gives the **UNC root** (`//PC-NAME/share`) to declare in the morfPhoto machine's
-  `roots` — no mount. The account running the morfPhoto service must have access to the
+  `roots` - no mount. The account running the morfPhoto service must have access to the
   share.
 
 For the SMB-from-Linux cases, type the **Windows username of this machine**

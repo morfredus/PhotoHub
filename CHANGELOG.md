@@ -3,6 +3,38 @@
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et du [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [0.16.8] - 2026-09-27
+
+### Fixed
+
+- **`scripts/sync-morf.sh` / `.ps1` no longer resynced morfBeacon.** Their header
+  still said PhotoHub embedded only morfUpdate, although it vendors morfBeacon since
+  it announces its presence; `morf doctor` then reported a drift the script could
+  not repair. The shell script is now the parc's generic one (beacon, update,
+  morfdeploy) and the PowerShell one syncs beacon and update.
+
+### Changed
+
+- Re-vendored morfBeacon to 0.7.2 (documentation-only release; `include/` and
+  `src/` unchanged).
+- Re-vendored morfUpdate to 0.8.2 (vendoring-only release; `include/` and
+  `src/` unchanged).
+
+## [0.16.7] - 2026-09-27
+
+### Changed
+
+- Re-vendored morfDeploy to 0.20.7 (dead-code removal and punctuation only; no
+  behaviour change).
+
+## [0.16.6] - 2026-09-27
+
+### Changed
+
+- Re-vendored morfUpdate to 0.8.1 (documentation-only release; clears the
+  `morf doctor` vendored-copy drift).
+- Em dashes replaced by `-` in the project's own files (UI texts included).
+
 ## [0.16.5] - 2026-09-10
 
 ### Changed
@@ -21,7 +53,7 @@ et du [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [0.16.3] - 2026-09-10
 
-### Fixed — update dialog offered the checksums file instead of the binary
+### Fixed - update dialog offered the checksums file instead of the binary
 
 - Resynced vendored morfUpdate to 0.6.0. The "Check for updates" dialog now picks
   the release asset matching the running OS and CPU architecture (the Windows
@@ -268,7 +300,7 @@ et du [versionnage sémantique](https://semver.org/lang/fr/).
 ### Ajouté
 
 - **Ajout de plusieurs dossiers en une fois.** « Ajouter un dossier… » permet désormais
-  de sélectionner **plusieurs dossiers** (Ctrl/Maj) au lieu d'un seul — pensé d'abord
+  de sélectionner **plusieurs dossiers** (Ctrl/Maj) au lieu d'un seul - pensé d'abord
   pour un CD qui contient plusieurs dossiers (par année, par événement), mais utile aussi
   sur un poste de travail. Le dialogue de confirmation liste tous les dossiers avec leur
   **chemin serveur éditable** (pré-rempli par le mappage), signale ceux sans mappage, et
@@ -284,12 +316,12 @@ et du [versionnage sémantique](https://semver.org/lang/fr/).
 - **Assistant d'accès réseau : trois topologies au lieu d'une.** Il ne suppose plus que
   morfPhoto tourne sur un Raspberry Pi. Un choix « morfPhoto tourne sur : » adapte les
   étapes :
-  - **serveur Linux (Pi ou autre), photos partagées depuis ce PC** — partage SMB en un
+  - **serveur Linux (Pi ou autre), photos partagées depuis ce PC** - partage SMB en un
     clic + commandes serveur généralisées (`cifs-utils` au besoin, montage `cifs`,
     `fstab`, rappel d'ajouter le point de montage à `roots`) ;
-  - **ce PC Windows (morfPhoto et photos sur la même machine)** — aucun partage ni
+  - **ce PC Windows (morfPhoto et photos sur la même machine)** - aucun partage ni
     montage, juste le bloc `roots` à mettre dans `morfphoto.json` avec le dossier local ;
-  - **autre PC Windows, photos partagées depuis ce PC** — partage ici + racine UNC
+  - **autre PC Windows, photos partagées depuis ce PC** - partage ici + racine UNC
     (`//NOM-DU-PC/partage`) à déclarer dans le `roots` de la machine morfPhoto.
   La note « mot de passe » n'apparaît que pour le cas SMB depuis Linux ; un rappel
   « exiftool requis sur la machine morfPhoto » est ajouté. README FR + EN mis à jour.

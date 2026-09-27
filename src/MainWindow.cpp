@@ -213,7 +213,7 @@ void MainWindow::buildUi() {
     auto* statsRow = new QHBoxLayout(stats);
     const auto makeStat = [&statsRow](const QString& caption, QLabel*& value) {
         auto* box = new QVBoxLayout;
-        value = new QLabel(QStringLiteral("—"));
+        value = new QLabel(QStringLiteral("-"));
         auto f = value->font(); f.setPointSize(f.pointSize() + 6); f.setBold(true);
         value->setFont(f);
         box->addWidget(value);
@@ -257,7 +257,7 @@ void MainWindow::buildUi() {
     fBtns->addStretch(1);
     fBtns->addWidget(m_purgeBtn);
     fLayout->addLayout(fBtns);
-    m_rootsLabel = new QLabel(QStringLiteral("Racines autorisées : —"));
+    m_rootsLabel = new QLabel(QStringLiteral("Racines autorisées : -"));
     m_rootsLabel->setWordWrap(true);
     m_rootsLabel->setStyleSheet(QStringLiteral("color:#99a1ad"));
     fLayout->addWidget(m_rootsLabel);
@@ -286,7 +286,7 @@ void MainWindow::buildUi() {
     iBtns->addWidget(m_indexFullBtn);
     iBtns->addStretch(1);
     iLayout->addLayout(iBtns);
-    m_indexLabel = new QLabel(QStringLiteral("—"));
+    m_indexLabel = new QLabel(QStringLiteral("-"));
     m_indexLabel->setWordWrap(true);
     iLayout->addWidget(m_indexLabel);
     m_progress = new QProgressBar;
@@ -596,9 +596,9 @@ void MainWindow::showNetworkAccessDialog() {
     auto* topoRow = new QHBoxLayout;
     topoRow->addWidget(new QLabel(QStringLiteral("morfPhoto tourne sur :")));
     auto* topoCombo = new QComboBox;
-    topoCombo->addItem(QStringLiteral("Un serveur Linux (Raspberry Pi ou autre) — photos partagées depuis ce PC"));
-    topoCombo->addItem(QStringLiteral("Ce PC Windows — morfPhoto et les photos sur la même machine"));
-    topoCombo->addItem(QStringLiteral("Un autre PC Windows — photos partagées depuis ce PC"));
+    topoCombo->addItem(QStringLiteral("Un serveur Linux (Raspberry Pi ou autre) - photos partagées depuis ce PC"));
+    topoCombo->addItem(QStringLiteral("Ce PC Windows - morfPhoto et les photos sur la même machine"));
+    topoCombo->addItem(QStringLiteral("Un autre PC Windows - photos partagées depuis ce PC"));
     topoRow->addWidget(topoCombo, 1);
     layout->addLayout(topoRow);
 
@@ -612,7 +612,7 @@ void MainWindow::showNetworkAccessDialog() {
     layout->addLayout(mapRow);
 
     // Étape 1 : partage Windows (seulement quand morfPhoto est sur une AUTRE machine).
-    auto* step1Label = new QLabel(QStringLiteral("<b>Étape 1 — sur ce PC (Windows) : partager le dossier</b>"));
+    auto* step1Label = new QLabel(QStringLiteral("<b>Étape 1 - sur ce PC (Windows) : partager le dossier</b>"));
     layout->addWidget(step1Label);
     auto* winCmd = new QPlainTextEdit;
     winCmd->setReadOnly(true);
@@ -628,7 +628,7 @@ void MainWindow::showNetworkAccessDialog() {
     layout->addLayout(winBtns);
 
     // Étape 2 : ce qu'il faut faire sur la machine morfPhoto (montage réseau,
-    // racine UNC, ou simple déclaration locale — selon la topologie choisie).
+    // racine UNC, ou simple déclaration locale - selon la topologie choisie).
     auto* step2Label = new QLabel;
     layout->addWidget(step2Label);
     auto* serverCmd = new QPlainTextEdit;
@@ -822,7 +822,7 @@ void MainWindow::showNetworkAccessDialog() {
             // Serveur Linux : installer cifs-utils au besoin, monter (ro ou rw selon la
             // case « qualifiable »), rendre le montage permanent, déclarer la racine.
             // uid/gid 1000 = utilisateur du service morfPhoto (à vérifier avec `id`).
-            step2Label->setText(QStringLiteral("<b>Étape 2 — sur le serveur Linux (à coller dans un terminal)</b>"));
+            step2Label->setText(QStringLiteral("<b>Étape 2 - sur le serveur Linux (à coller dans un terminal)</b>"));
             serverCmd->setPlainText(QStringLiteral(
                 "# Client SMB (si absent) : sudo apt install -y cifs-utils\n"
                 "sudo mkdir -p %1\n"
@@ -844,7 +844,7 @@ void MainWindow::showNetworkAccessDialog() {
         } else if (topo == 1) {
             // Ce PC : morfPhoto et les photos sur la même machine. Aucun partage,
             // aucun montage : il suffit de déclarer le dossier local dans roots.
-            step2Label->setText(QStringLiteral("<b>Sur cette machine — configuration de morfPhoto</b>"));
+            step2Label->setText(QStringLiteral("<b>Sur cette machine - configuration de morfPhoto</b>"));
             serverCmd->setPlainText(QStringLiteral(
                 "# morfPhoto et les photos sont sur cette machine : aucun partage, aucun montage.\n"
                 "# Dans morfphoto.json (à côté du binaire morfPhoto), déclarez le dossier local\n"
@@ -857,7 +857,7 @@ void MainWindow::showNetworkAccessDialog() {
                 .arg(serverRoot));
         } else {
             // Autre PC Windows : partage ici, puis racine UNC là-bas (pas de montage).
-            step2Label->setText(QStringLiteral("<b>Étape 2 — sur l'autre PC Windows — configuration de morfPhoto</b>"));
+            step2Label->setText(QStringLiteral("<b>Étape 2 - sur l'autre PC Windows - configuration de morfPhoto</b>"));
             serverCmd->setPlainText(QStringLiteral(
                 "# morfPhoto tourne sur un autre PC Windows : aucun montage à faire.\n"
                 "# Dans son morfphoto.json (à côté du binaire morfPhoto), déclarez la racine UNC :\n"
@@ -1396,7 +1396,7 @@ void MainWindow::addFolderClicked() {
     // Cas d'usage principal : plusieurs dossiers d'un même CD partagent le même volume.
     // morfPhoto NE marque JAMAIS disparues les photos d'un dossier amovible support absent.
     auto* removableChk = new QCheckBox(
-        QStringLiteral("Support amovible (CD/DVD, disque d'archive) — appliqué à tous les dossiers ci-dessus"));
+        QStringLiteral("Support amovible (CD/DVD, disque d'archive) - appliqué à tous les dossiers ci-dessus"));
     layout->addWidget(removableChk);
     auto* removableHint = new QLabel(
         QStringLiteral("Ne jamais marquer ses photos disparues quand le support est absent : "

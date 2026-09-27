@@ -2,7 +2,7 @@
 
 *Lire dans une autre langue : [English](README.md) · **Français** (ce document).*
 
-[![Version](https://img.shields.io/badge/version-0.16.5-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.16.8-blue)](CHANGELOG.md)
 ![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus)
 ![Qt](https://img.shields.io/badge/Qt-6-41CD52?logo=qt)
 ![Build](https://img.shields.io/badge/CMake-3.21+-064F8C?logo=cmake)
@@ -58,7 +58,7 @@ adapte les étapes. Il couvre trois cas :
   dossier local (en slashs avant). Aucun mappage de chemins n'est alors nécessaire.
 - **Un autre PC Windows, photos partagées depuis ce PC.** Il crée le partage ici, puis
   donne la **racine UNC** (`//NOM-DU-PC/partage`) à déclarer dans le `roots` de la machine
-  morfPhoto — sans montage. Le compte qui exécute le service morfPhoto doit avoir accès au
+  morfPhoto - sans montage. Le compte qui exécute le service morfPhoto doit avoir accès au
   partage.
 
 Pour les cas avec partage SMB depuis Linux, il faut le **nom d'utilisateur
