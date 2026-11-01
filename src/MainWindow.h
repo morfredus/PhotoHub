@@ -67,6 +67,8 @@ private slots:
     void openAnalyticsClicked();
     void showContextDialog();                // Contextes photographiques (qualification)
     void showMappingsDialog();               // Fichier > Mappage de chemins...
+    void checkSourcesHealth();               // bandeau si une source SMB est injoignable
+    void showManualNetworkDialog();          // commandes a copier (mode avance)
     void showNetworkAccessDialog();          // Fichier > Assistant d'accès réseau...
     void checkForUpdates(bool manual);       // manual=true : menu ; false : démarrage silencieux
     void showAbout();
@@ -108,6 +110,9 @@ private:
 
     QComboBox*    m_sourceCombo;
     QLabel*       m_connLabel;
+    QWidget*      m_accessBanner = nullptr;   // « source injoignable » + Reconfigurer
+    QLabel*       m_accessBannerText = nullptr;
+    QPushButton*  m_accessBannerBtn = nullptr;
     QLabel*       m_statFiles;
     QLabel*       m_statCameras;
     QLabel*       m_statLenses;

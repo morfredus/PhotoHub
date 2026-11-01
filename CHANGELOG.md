@@ -3,6 +3,42 @@
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et du [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [0.18.0] - 2026-11-02
+
+### Changed
+
+- **The network access assistant mounts by hostname first**: the server is asked to mount
+  `//<pc name>/share`, and only falls back to the PC's IP address when it cannot reach that
+  name. A name survives a DHCP change of address; an IP in `fstab` did not (the cause of a
+  silent mount failure). The last page says which of the two was used.
+- The assistant's first page advises reserving a fixed address (DHCP reservation) in the box
+  for this PC and the morfPhoto server.
+
+### Added
+
+- **"Reconfigure access" banner**: PhotoHub reads `reachable` from morfPhoto (>= 0.15.0) on
+  connection and every 5 minutes. When a pushed source is unreachable it says so; for this
+  PC's own source it also says whether the recorded address differs from the current one and
+  offers a button that reopens the assistant.
+
+## [0.17.0] - 2026-11-01
+
+### Changed
+
+- **Network access assistant is now a step-by-step wizard** (new `NetworkAccessWizard`) for a
+  morfPhoto running on another machine. Each page asks only what it needs and advances only
+  once its action is verified: server ready, Windows share created, credentials accepted and
+  share mounted, root confirmed by the API. A failed mount keeps the user on the step with a
+  plain-language reason (wrong password, locked account, unreachable PC, share not found...)
+  and clears the password field when it is the cause. The old screen stays reachable through
+  "Manual mode...", and opens directly when morfPhoto runs on this PC.
+
+### Fixed
+
+- **"Create the share" was silent**: the elevated PowerShell was fire-and-forget, so its
+  window showed nothing and PhotoHub never learned the outcome. The script now logs progress
+  to a file that the wizard reads live, and a refused UAC prompt or a failure is reported.
+
 ## [0.16.14] - 2026-10-15
 
 ### Changed

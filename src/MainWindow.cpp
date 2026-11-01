@@ -8,6 +8,7 @@
 #include "BeaconDiscovery.h"
 #include "MorfPhotoClient.h"
 #include "ContextDialog.h"
+#include "NetworkAccessWizard.h"
 
 #include <QWidget>
 #include <QComboBox>
@@ -55,6 +56,7 @@
 #include <QRegularExpression>
 #include <QJsonArray>
 #include <QHash>
+#include <QHostAddress>
 
 #include <morfupdate/UpdateDialog.h>
 #include <morfupdate/morfUpdateConfig.h>
@@ -64,56 +66,6 @@ namespace photohub {
 namespace {
 constexpr const char* kCapPhoto     = "photo_index";
 constexpr const char* kCapAnalytics = "photo_analytics";
-
-QString stepLabel(const QString& id) {
-    static const QHash<QString, QString> labels = {
-        {QStringLiteral("source_identified"),       QStringLiteral("Machine source identifiée")},
-        {QStringLiteral("hostname_normalized"),     QStringLiteral("Hostname normalisé")},
-        {QStringLiteral("mountpoint_created"),      QStringLiteral("Point de montage créé")},
-        {QStringLiteral("credentials_written"),     QStringLiteral("Credentials propres à la source")},
-        {QStringLiteral("credentials_permissions"), QStringLiteral("Permissions des credentials")},
-        {QStringLiteral("smb_auth"),                QStringLiteral("Authentification SMB")},
-        {QStringLiteral("cifs_mounted"),            QStringLiteral("Partage CIFS monté")},
-        {QStringLiteral("share_readable"),          QStringLiteral("Partage accessible en lecture")},
-        {QStringLiteral("fstab_configured"),        QStringLiteral("Montage persistant configuré")},
-        {QStringLiteral("root_added"),              QStringLiteral("Root ajoutée à morfPhoto")},
-        {QStringLiteral("json_valid"),              QStringLiteral("Configuration morfPhoto valide")},
-        {QStringLiteral("service_restarted"),       QStringLiteral("morfPhoto redémarré")},
-        {QStringLiteral("service_active"),          QStringLiteral("Service opérationnel")},
-        {QStringLiteral("root_in_api"),             QStringLiteral("Root confirmée par l'API")},
-    };
-    return labels.value(id, id);
-}
-
-QString formatSourceReport(const QJsonObject& report) {
-    QStringList lines;
-    for (const QJsonValue& v : report.value(QStringLiteral("steps")).toArray()) {
-        const QJsonObject s = v.toObject();
-        const bool ok = s.value(QStringLiteral("ok")).toBool();
-        QString line = QStringLiteral("%1  %2")
-            .arg(stepLabel(s.value(QStringLiteral("id")).toString()), -38)
-            .arg(ok ? QStringLiteral("✓") : QStringLiteral("✗"));
-        const QString detail = s.value(QStringLiteral("detail")).toString().trimmed();
-        if (!ok && !detail.isEmpty())
-            line += QStringLiteral("\n  %1").arg(detail);
-        else if (ok && (s.value(QStringLiteral("id")).toString() == QLatin1String("hostname_normalized")
-                        || s.value(QStringLiteral("id")).toString() == QLatin1String("mountpoint_created")))
-            line += QStringLiteral("  %1").arg(detail);
-        lines << line;
-    }
-    const QString detail = report.value(QStringLiteral("detail")).toString().trimmed();
-    const QString code   = report.value(QStringLiteral("code")).toString().trimmed();
-    if (!report.value(QStringLiteral("ok")).toBool() && !detail.isEmpty()) {
-        lines << QString();
-        if (!code.isEmpty())
-            lines << code;
-        lines << detail;
-    } else if (report.value(QStringLiteral("already_configured")).toBool()) {
-        lines << QString();
-        lines << QStringLiteral("Configuration déjà opérationnelle (aucun changement).");
-    }
-    return lines.join(QLatin1Char('\n'));
-}
 
 QString folderState(const QJsonObject& f) {
     if (f.value(QStringLiteral("enabled")).toInt() == 1)
@@ -203,6 +155,30 @@ void MainWindow::buildUi() {
     m_analyticsBtn->setVisible(false);
     srcRow->addWidget(m_analyticsBtn);
     root->addLayout(srcRow);
+
+    // Bandeau « source injoignable » : masque tant que tout va bien.
+    m_accessBanner = new QWidget;
+    m_accessBanner->setStyleSheet(QStringLiteral(
+        "QWidget#accessBanner { background:#fff4e0; border:1px solid #e09000; border-radius:4px; }"
+        "QLabel { color:#6b4500; }"));
+    m_accessBanner->setObjectName(QStringLiteral("accessBanner"));
+    auto* bannerLay = new QHBoxLayout(m_accessBanner);
+    bannerLay->setContentsMargins(10, 6, 10, 6);
+    m_accessBannerText = new QLabel;
+    m_accessBannerText->setWordWrap(true);
+    bannerLay->addWidget(m_accessBannerText, 1);
+    m_accessBannerBtn = new QPushButton(QStringLiteral("Reconfigurer l'accès…"));
+    bannerLay->addWidget(m_accessBannerBtn);
+    m_accessBanner->hide();
+    root->addWidget(m_accessBanner);
+    connect(m_accessBannerBtn, &QPushButton::clicked, this, &MainWindow::showNetworkAccessDialog);
+
+    // Verification de fond des sources, lente et espacee : le serveur sonde chaque montage.
+    auto* sourcesTimer = new QTimer(this);
+    sourcesTimer->setInterval(5 * 60 * 1000);
+    connect(sourcesTimer, &QTimer::timeout, this, &MainWindow::checkSourcesHealth);
+    sourcesTimer->start();
+
     connect(m_sourceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onSourceSelected);
     connect(m_contextsBtn, &QPushButton::clicked, this, &MainWindow::showContextDialog);
@@ -550,6 +526,48 @@ QString MainWindow::predictedMountpoint() {
 }
 
 void MainWindow::showNetworkAccessDialog() {
+    // morfPhoto sur CE PC : rien a partager ni a monter, le mode manuel (qui explique
+    // la declaration de la racine) est le bon outil.
+    const QString host = QUrl(m_client->baseUrl()).host();
+    bool sameMachine = host == QLatin1String("localhost");
+    if (!sameMachine && !host.isEmpty()) {
+        const QHostAddress addr(host);
+        sameMachine = !addr.isNull() && QNetworkInterface::allAddresses().contains(addr);
+    }
+    if (sameMachine) {
+        showManualNetworkDialog();
+        return;
+    }
+
+    NetworkAccessContext ctx;
+    ctx.client       = m_client;
+    ctx.pcName       = detectPcName();
+    ctx.lanIp        = detectLanIp();
+    ctx.winUser      = detectWindowsUser();
+    ctx.mappings     = m_pathMappings;
+    ctx.shareNameFor = [](const QString& root) { return shareNameFor(root); };
+    ctx.onMounted    = [this](const QString& localRoot, const QString& mountpoint) {
+        // Memorise « dossier local -> chemin vu par morfPhoto » (cree le mappage au besoin).
+        const QString key = QDir::fromNativeSeparators(localRoot);
+        bool found = false;
+        for (auto& m : m_pathMappings)
+            if (QDir::fromNativeSeparators(m.first) == key) {
+                m.second = mountpoint;
+                found = true;
+            }
+        if (!found)
+            m_pathMappings.append({key, mountpoint});
+        saveMappings();
+    };
+
+    NetworkAccessWizard wizard(ctx, this);
+    wizard.exec();
+    if (wizard.manualRequested())
+        showManualNetworkDialog();
+    checkSourcesHealth();
+}
+
+void MainWindow::showManualNetworkDialog() {
     if (m_pathMappings.isEmpty()) {
         const auto answer = QMessageBox::question(this, QStringLiteral("Assistant d'accès réseau"),
             QStringLiteral("Aucun mappage de chemins n'est configuré.\n\n"
@@ -1114,6 +1132,41 @@ void MainWindow::onSourceSelected(int index) {
     m_connLabel->setText(QStringLiteral("Connecté à %1").arg(m_sourceCombo->itemText(index)));
     m_contextsBtn->setEnabled(true);
     m_client->refreshAll();
+    checkSourcesHealth();
+}
+
+void MainWindow::checkSourcesHealth() {
+    if (!m_client->hasBase())
+        return;
+    m_client->fetchSources([this](const QJsonArray& items) {
+        const QString pc = detectPcName();
+        const QString ip = detectLanIp();
+        QStringList lines;
+        bool mine = false;   // une source injoignable est celle de CE PC : on sait la reconfigurer
+        for (const QJsonValue& v : items) {
+            const QJsonObject s = v.toObject();
+            if (s.value(QStringLiteral("reachable")).toBool(true))
+                continue;
+            const QString name = s.value(QStringLiteral("hostname")).toString();
+            const QString host = s.value(QStringLiteral("host")).toString();
+            if (name.compare(pc, Qt::CaseInsensitive) == 0) {
+                mine = true;
+                const QHostAddress recorded(host);
+                const bool ipChanged = !recorded.isNull() && !ip.isEmpty() && host != ip;
+                lines << (ipChanged
+                    ? QStringLiteral("Le serveur n'atteint plus ce PC : il utilise l'adresse %1, "
+                                     "mais ce PC est maintenant en %2.").arg(host, ip)
+                    : QStringLiteral("Le serveur n'atteint plus ce PC (%1). Vérifiez qu'il est "
+                                     "allumé sur le réseau, ou reconfigurez l'accès.").arg(name));
+            } else {
+                lines << QStringLiteral("La machine « %1 » est injoignable depuis le serveur "
+                                        "(éteinte ou hors réseau ?).").arg(name);
+            }
+        }
+        m_accessBannerText->setText(lines.join(QLatin1Char('\n')));
+        m_accessBannerBtn->setVisible(mine);
+        m_accessBanner->setVisible(!lines.isEmpty());
+    });
 }
 
 // =============================================================================

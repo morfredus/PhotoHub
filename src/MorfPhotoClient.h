@@ -63,6 +63,10 @@ public:
                     const QString& password, const QString& hostname, bool writable,
                     std::function<void(bool ok, const QJsonObject& report)> cb = {});
 
+    // Sources SMB connues du serveur (hostname, host, mounted, reachable). Liste vide si
+    // le serveur ne repond pas : l'appelant n'en deduit alors aucune panne de source.
+    void fetchSources(std::function<void(const QJsonArray& items)> cb);
+
     // Controle le helper privilegie cote serveur avant d'envoyer identifiants.
     void checkSourcesReady(std::function<void(bool ok, const QJsonObject& report)> cb);
 

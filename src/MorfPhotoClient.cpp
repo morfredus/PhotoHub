@@ -101,6 +101,14 @@ void MorfPhotoClient::addFolder(const QString& path, bool removable, const QStri
     });
 }
 
+void MorfPhotoClient::fetchSources(std::function<void(const QJsonArray&)> cb) {
+    // Le serveur sonde chaque montage avec un delai borne : prevoir large, en silence
+    // (c'est une verification de fond, pas une action de l'utilisateur).
+    send("GET", QStringLiteral("/api/v1/sources"), {}, [cb](int s, const QJsonDocument& d) {
+        if (cb) cb(s == 200 ? d.object().value(QStringLiteral("items")).toArray() : QJsonArray{});
+    }, 30000, true);
+}
+
 void MorfPhotoClient::checkSourcesReady(std::function<void(bool, const QJsonObject&)> cb) {
     send("GET", QStringLiteral("/api/v1/sources/ready"), {}, [this, cb](int s, const QJsonDocument& d) {
         QJsonObject report = d.object();

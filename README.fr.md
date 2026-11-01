@@ -2,7 +2,7 @@
 
 *Lire dans une autre langue : [English](README.md) · **Français** (ce document).*
 
-[![Version](https://img.shields.io/badge/version-0.16.14-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.18.0-blue)](CHANGELOG.md)
 ![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus)
 ![Qt](https://img.shields.io/badge/Qt-6-41CD52?logo=qt)
 ![Build](https://img.shields.io/badge/CMake-3.21+-064F8C?logo=cmake)
@@ -46,7 +46,15 @@ PhotoHub  ──────────────────── HTTP /api
 morfPhoto indexe des **chemins locaux à la machine où il tourne** (son champ `roots`).
 Selon l'endroit où il tourne, l'accès aux photos se prépare différemment. L'**Assistant
 d'accès réseau** (`Fichier > Assistant d'accès réseau…`) part d'un choix de situation et
-adapte les étapes. Il couvre trois cas :
+adapte les étapes.
+
+Quand morfPhoto tourne sur une **autre machine**, l'assistant avance **pas à pas** : il ne
+demande que l'information utile à chaque étape (dossier, autorisation Windows, mot de
+passe) et ne passe à la suivante qu'une fois l'étape **vérifiée** (serveur prêt, partage
+créé, identifiants acceptés, partage monté et visible dans l'API). En cas d'échec, il
+explique la cause en clair et reste sur l'étape. Le bouton « Mode manuel… » donne
+l'ancien écran à commandes à copier. Quand morfPhoto tourne sur **ce PC**, l'écran
+manuel s'ouvre directement. L'assistant monte le partage par le **nom du PC** (l'adresse IP ne sert qu'en repli) et PhotoHub affiche un **bandeau « Reconfigurer l'accès… »** quand une source devient injoignable (PC éteint, adresse changée). Les trois cas :
 
 - **Un serveur Linux (Raspberry Pi ou autre), photos partagées depuis ce PC.** Il crée
   le **partage Windows en lecture seule** en un clic (autorisation administrateur / UAC)

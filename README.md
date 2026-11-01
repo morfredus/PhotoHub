@@ -2,7 +2,7 @@
 
 *Read in another language: **English** (this document) · [Français](README.fr.md).*
 
-[![Version](https://img.shields.io/badge/version-0.16.14-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.18.0-blue)](CHANGELOG.md)
 ![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus)
 ![Qt](https://img.shields.io/badge/Qt-6-41CD52?logo=qt)
 ![Build](https://img.shields.io/badge/CMake-3.21+-064F8C?logo=cmake)
@@ -43,7 +43,15 @@ PhotoHub  ──────────────────── HTTP /api
 morfPhoto indexes **paths local to the machine it runs on** (its `roots`). How you
 expose the photos depends on where it runs. The **Network access assistant**
 (`File > Network access assistant…`) starts from a choice of situation and adapts the
-steps. It covers three cases:
+steps.
+
+When morfPhoto runs on **another machine**, the assistant goes **step by step**: it
+asks only for what the current step needs (folder, Windows authorisation, password)
+and moves on only once the step is **verified** (server ready, share created,
+credentials accepted, share mounted and visible in the API). On failure it explains the
+cause in plain words and stays on the step. The "Manual mode…" button gives the old
+copy-the-commands screen. When morfPhoto runs on **this PC**, the manual screen opens
+directly. The assistant mounts the share by the **PC's name** (the IP address is only a fallback) and PhotoHub shows a **"Reconfigure access..." banner** when a source becomes unreachable (PC off, address changed). The three cases:
 
 - **A Linux server (Raspberry Pi or other), photos shared from this PC.** It creates the
   **read-only Windows share** in one click (UAC prompt) and **sends the config**

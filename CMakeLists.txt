@@ -56,10 +56,12 @@ add_executable(PhotoHub WIN32
     src/BeaconDiscovery.cpp
     src/MorfPhotoClient.cpp
     src/ContextDialog.cpp
+    src/NetworkAccessWizard.cpp
     src/MainWindow.h
     src/BeaconDiscovery.h
     src/MorfPhotoClient.h
     src/ContextDialog.h
+    src/NetworkAccessWizard.h
     ${APP_RESOURCES}
 )
 
