@@ -60,6 +60,7 @@ add_executable(PhotoHub WIN32
     src/MainWindow.h
     src/BeaconDiscovery.h
     src/MorfPhotoClient.h
+    src/PsQuote.h
     src/ContextDialog.h
     src/NetworkAccessWizard.h
     ${APP_RESOURCES}
@@ -70,6 +71,13 @@ target_link_libraries(PhotoHub PRIVATE
     morfUpdate::morfUpdate morfUpdate::Widgets
     morfBeacon::morfBeacon)
 target_compile_definitions(PhotoHub PRIVATE PHOTOHUB_VERSION="${PROJECT_VERSION}")
+
+# Tests natifs des fonctions pures (ctest) : uniquement QtCore.
+enable_testing()
+add_executable(ph_test_pure tests/test-pure.cpp)
+target_include_directories(ph_test_pure PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(ph_test_pure PRIVATE Qt6::Core)
+add_test(NAME ph_test_pure COMMAND ph_test_pure)
 
 if(WIN32)
     target_link_libraries(PhotoHub PRIVATE ws2_32)   # sockets UDP (decouverte LAN)

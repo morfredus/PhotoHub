@@ -39,6 +39,7 @@ class ContextDialog : public QDialog {
     Q_OBJECT
 public:
     explicit ContextDialog(MorfPhotoClient* client, QWidget* parent = nullptr);
+    ~ContextDialog() override;
 
 private:
     void buildUi();

@@ -13,6 +13,7 @@
 #include <QJsonArray>
 #include <QStringList>
 #include <QUrl>
+#include <QPointer>
 #include <QTimer>
 #include <memory>
 
@@ -40,7 +41,7 @@ void MorfPhotoClient::setBaseUrl(const QString& url) {
 }
 
 void MorfPhotoClient::send(const QByteArray& verb, const QString& path,
-                           const QByteArray& body, Handler handler, int timeoutMs, bool quiet) {
+                           const QByteArray& body, Handler handler, int timeoutMs, bool quiet, const QObject* ctx) {
     if (m_base.isEmpty()) {
         if (!quiet)
             emit failed(QStringLiteral("aucun morfPhoto sélectionné"));
@@ -53,8 +54,12 @@ void MorfPhotoClient::send(const QByteArray& verb, const QString& path,
         req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
 
     QNetworkReply* reply = m_net->sendCustomRequest(req, verb, body);
-    connect(reply, &QNetworkReply::finished, this, [this, reply, handler, quiet]() {
+    const QPointer<const QObject> guard(ctx);
+    const bool hasCtx = (ctx != nullptr);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, handler, quiet, guard, hasCtx]() {
         reply->deleteLater();
+        if (hasCtx && guard.isNull())
+            return;   // le demandeur n'existe plus : ne rien rappeler
         const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
         if (reply->error() != QNetworkReply::NoError && status == 0) {
@@ -109,19 +114,21 @@ void MorfPhotoClient::fetchSources(std::function<void(const QJsonArray&)> cb) {
     }, 30000, true);
 }
 
-void MorfPhotoClient::checkSourcesReady(std::function<void(bool, const QJsonObject&)> cb) {
+void MorfPhotoClient::checkSourcesReady(std::function<void(bool, const QJsonObject&)> cb,
+                                        const QObject* ctx) {
     send("GET", QStringLiteral("/api/v1/sources/ready"), {}, [this, cb](int s, const QJsonDocument& d) {
         QJsonObject report = d.object();
         const bool ok = (s == 200) && report.value(QStringLiteral("ok")).toBool();
         if (!ok && !report.contains(QStringLiteral("detail")))
             report[QStringLiteral("detail")] = errorText(d, s);
         if (cb) cb(ok, report);
-    }, 15000);
+    }, 15000, false, ctx);
 }
 
 void MorfPhotoClient::pushSource(const QString& host, const QString& share, const QString& username,
                                  const QString& password, const QString& hostname, bool writable,
-                                 std::function<void(bool, const QJsonObject&)> cb) {
+                                 std::function<void(bool, const QJsonObject&)> cb,
+                                 const QObject* ctx) {
     QJsonObject in{{"host", host}, {"share", share},
                    {"username", username}, {"password", password},
                    {"hostname", hostname}, {"writable", writable}};
@@ -139,13 +146,14 @@ void MorfPhotoClient::pushSource(const QString& host, const QString& share, cons
             emit actionResult(false, errorText(d, s));
             if (cb) cb(false, report);
         }
-    }, 120000);
+    }, 120000, false, ctx);
 }
 
 void MorfPhotoClient::confirmSourceRoot(const QString& mountpoint, bool waitRestart,
-                                        std::function<void(bool, const QJsonObject&)> cb) {
-    const auto check = [this, mountpoint, cb]() {
-        send("GET", QStringLiteral("/status"), {}, [this, mountpoint, cb](int s, const QJsonDocument& d) {
+                                        std::function<void(bool, const QJsonObject&)> cb,
+                                        const QObject* ctx) {
+    const auto check = [this, mountpoint, cb, ctx]() {
+        send("GET", QStringLiteral("/status"), {}, [this, mountpoint, cb, ctx](int s, const QJsonDocument& d) {
             const QString state = d.object().value(QStringLiteral("state")).toString();
             const bool statusOk = (s == 200) && (state.isEmpty() || state == QLatin1String("ok")
                 || state == QLatin1String("idle") || state == QLatin1String("indexing"));
@@ -165,8 +173,8 @@ void MorfPhotoClient::confirmSourceRoot(const QString& mountpoint, bool waitRest
                 if (statusOk && found)
                     refreshAll();
                 if (cb) cb(statusOk && found, extra);
-            }, 8000, true);
-        }, 8000, true);
+            }, 8000, true, ctx);
+        }, 8000, true, ctx);
     };
 
     if (!waitRestart) {
@@ -174,26 +182,37 @@ void MorfPhotoClient::confirmSourceRoot(const QString& mountpoint, bool waitRest
         return;
     }
 
-    // Le service vient d'etre relance : attendre /healthz jusqu'a ~45 s.
-    auto* timer = new QTimer(this);
-    timer->setInterval(1000);
+    // Le service vient d'etre relance : attendre /healthz jusqu'a ~45 s, une seule
+    // requete en vol a la fois (sonde chainee), `check` n'est lance qu'une fois.
     const auto tries = std::make_shared<int>(0);
-    connect(timer, &QTimer::timeout, this, [this, timer, tries, check]() {
-        send("GET", QStringLiteral("/healthz"), {}, [timer, tries, check](int s, const QJsonDocument&) {
-            if (s == 200) {
-                timer->stop();
-                timer->deleteLater();
+    poll(1000, [this, tries, check, ctx](std::function<void(bool)> next) {
+        send("GET", QStringLiteral("/healthz"), {}, [tries, check, next](int s, const QJsonDocument&) {
+            if (s == 200 || ++(*tries) >= 45) {
+                next(true);
                 check();
                 return;
             }
-            if (++(*tries) >= 45) {
-                timer->stop();
-                timer->deleteLater();
-                check();
-            }
-        }, 3000, true);
+            next(false);
+        }, 3000, true, ctx);
     });
-    timer->start();
+}
+
+void MorfPhotoClient::poll(int intervalMs, std::function<void(std::function<void(bool)>)> probe) {
+    // `step` est possede par les rappels en vol et par le minuteur en attente ; il se
+    // reference lui-meme en weak_ptr pour ne pas former de cycle (fuite).
+    auto step = std::make_shared<std::function<void()>>();
+    const std::weak_ptr<std::function<void()>> self = step;
+    *step = [this, intervalMs, probe, self]() {
+        const auto me = self.lock();
+        if (!me)
+            return;
+        probe([this, intervalMs, me](bool finished) {
+            if (finished)
+                return;
+            QTimer::singleShot(intervalMs, this, [me]() { (*me)(); });
+        });
+    };
+    (*step)();
 }
 
 void MorfPhotoClient::setFolderEnabled(int folderId, bool enabled) {
@@ -254,11 +273,12 @@ void MorfPhotoClient::triggerIndex(const QString& mode) {
 }
 
 void MorfPhotoClient::reindexAndWait(const QString& mode,
-                                    std::function<void(bool, const QString&)> cb) {
+                                    std::function<void(bool, const QString&)> cb,
+                                    const QObject* ctx) {
     // Étape 1 : mémoriser l'id de la dernière passe. Une passe crée TOUJOURS une ligne
     // (même sans nouveau fichier) : voir cet id augmenter = la passe qu'on lance est
     // finie. Signal fiable, contrairement à l'état seul (course au démarrage du worker).
-    send("GET", QStringLiteral("/api/v1/index/status"), {}, [this, mode, cb](int s, const QJsonDocument& d) {
+    send("GET", QStringLiteral("/api/v1/index/status"), {}, [this, mode, cb, ctx](int s, const QJsonDocument& d) {
         const int baseline = (s == 200)
             ? d.object().value(QStringLiteral("last_run")).toObject()
                   .value(QStringLiteral("id")).toInt(-1)
@@ -267,42 +287,40 @@ void MorfPhotoClient::reindexAndWait(const QString& mode,
         // Étape 2 : déclencher. 202 = accepté ; 409 = une passe tourne déjà (on attend
         // quand même sa fin pour rafraîchir). Tout autre code = échec immédiat.
         const QByteArray body = QJsonDocument(QJsonObject{{"mode", mode}}).toJson(QJsonDocument::Compact);
-        send("POST", QStringLiteral("/api/v1/index"), body, [this, baseline, cb](int s2, const QJsonDocument& d2) {
+        send("POST", QStringLiteral("/api/v1/index"), body, [this, baseline, cb, ctx](int s2, const QJsonDocument& d2) {
             if (s2 != 202 && s2 != 409) {
                 if (cb) cb(false, errorText(d2, s2));
                 return;
             }
 
             // Étape 3 : sonder l'état jusqu'à « idle » ET un id de passe supérieur au
-            // repère. Garde-fou ~10 min (source SMB lente) pour ne jamais rester bloqué.
-            auto* timer = new QTimer(this);
-            timer->setInterval(1500);
+            // repère. Une seule requête en vol (sonde chaînée : pas de rappel doublé,
+            // pas de minuteur supprimé deux fois). Garde-fou ~10 min (source SMB lente).
             const auto tries = std::make_shared<int>(0);
-            connect(timer, &QTimer::timeout, this, [this, timer, tries, baseline, cb]() {
+            poll(1500, [this, tries, baseline, cb, ctx](std::function<void(bool)> next) {
                 send("GET", QStringLiteral("/api/v1/index/status"), {},
-                     [timer, tries, baseline, cb](int s3, const QJsonDocument& d3) {
+                     [tries, baseline, cb, next](int s3, const QJsonDocument& d3) {
                     if (s3 == 200) {
                         const QJsonObject o = d3.object();
                         const QString state = o.value(QStringLiteral("state")).toString();
                         const int lastId = o.value(QStringLiteral("last_run")).toObject()
                                                .value(QStringLiteral("id")).toInt(-1);
                         if (state == QLatin1String("idle") && lastId > baseline) {
-                            timer->stop();
-                            timer->deleteLater();
+                            next(true);
                             if (cb) cb(true, o.value(QStringLiteral("last_error")).toString());
                             return;
                         }
                     }
                     if (++(*tries) >= 400) {   // 1500 ms * 400 ≈ 10 min
-                        timer->stop();
-                        timer->deleteLater();
+                        next(true);
                         if (cb) cb(false, QStringLiteral("délai d'indexation dépassé"));
+                        return;
                     }
-                }, 8000, true);
+                    next(false);
+                }, 8000, true, ctx);
             });
-            timer->start();
-        });
-    });
+        }, 8000, false, ctx);
+    }, 8000, false, ctx);
 }
 
 void MorfPhotoClient::purge(const QString& scope, const QVariant& value) {
@@ -333,19 +351,21 @@ void MorfPhotoClient::fetchCameras(std::function<void(const QJsonArray&)> cb) {
     });
 }
 
-void MorfPhotoClient::fetchContexts(const QString& status, std::function<void(const QJsonArray&)> cb) {
+void MorfPhotoClient::fetchContexts(const QString& status, std::function<void(const QJsonArray&)> cb,
+                                    const QObject* ctx) {
     QString path = QStringLiteral("/api/v1/contexts");
     if (!status.isEmpty())
         path += QStringLiteral("?status=") + status;
     send("GET", path, {}, [cb](int s, const QJsonDocument& d) {
         if (cb) cb(s == 200 ? d.object().value(QStringLiteral("items")).toArray() : QJsonArray{});
-    });
+    }, 8000, false, ctx);
 }
 
 void MorfPhotoClient::putContext(const QString& directory, const QString& context,
                                  const QString& subject, const QString& motif,
                                  const QString& description,
-                                 std::function<void(bool, const QJsonObject&, const QString&)> cb) {
+                                 std::function<void(bool, const QJsonObject&, const QString&)> cb,
+                                 const QObject* ctx) {
     QJsonObject in{{"directory", directory}, {"context", context}, {"subject", subject}};
     if (!motif.isEmpty())       in["motif"] = motif;
     if (!description.isEmpty())  in["description"] = description;
@@ -353,11 +373,12 @@ void MorfPhotoClient::putContext(const QString& directory, const QString& contex
     send("PUT", QStringLiteral("/api/v1/context"), body, [cb](int s, const QJsonDocument& d) {
         if (s == 200) { if (cb) cb(true, d.object(), QString()); }
         else          { if (cb) cb(false, QJsonObject{}, errorText(d, s)); }
-    });
+    }, 8000, false, ctx);
 }
 
 void MorfPhotoClient::fetchDirectorySample(const QString& directory, int limit,
-                                           std::function<void(const QStringList&)> cb) {
+                                           std::function<void(const QStringList&)> cb,
+                                           const QObject* ctx) {
     // ATTENTION : ne PAS construire cette URL avec des `.arg()` chaînés. Le répertoire
     // encodé contient des `%2F` (les `/`), `%20`, `%2C`... et QString::arg lit `%2F`
     // comme le marqueur `%2` suivi d'un `F`. Un second `.arg(limit)` réécrivait alors
@@ -377,11 +398,12 @@ void MorfPhotoClient::fetchDirectorySample(const QString& directory, int limit,
             for (const QJsonValue& v : d.object().value(QStringLiteral("items")).toArray())
                 paths << v.toObject().value(QStringLiteral("path")).toString();
         if (cb) cb(paths);
-    });
+    }, 8000, false, ctx);
 }
 
 void MorfPhotoClient::fetchThumbnail(const QString& path,
-                                     std::function<void(const QByteArray&)> cb) {
+                                     std::function<void(const QByteArray&)> cb,
+                                     const QObject* ctx) {
     // Reponse BINAIRE (image/jpeg) : on n'utilise pas send() (qui parse du JSON), mais
     // un GET direct dont on lit les octets bruts. 404 (pas de vignette) => octets vides.
     if (m_base.isEmpty()) { if (cb) cb(QByteArray{}); return; }
@@ -390,8 +412,12 @@ void MorfPhotoClient::fetchThumbnail(const QString& path,
     QNetworkRequest req{QUrl(url)};
     req.setTransferTimeout(15000);
     QNetworkReply* reply = m_net->get(req);
-    connect(reply, &QNetworkReply::finished, this, [reply, cb]() {
+    const QPointer<const QObject> guard(ctx);
+    const bool hasCtx = (ctx != nullptr);
+    connect(reply, &QNetworkReply::finished, this, [reply, cb, guard, hasCtx]() {
         reply->deleteLater();
+        if (hasCtx && guard.isNull())
+            return;
         const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         QByteArray bytes;
         if (status == 200)

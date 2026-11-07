@@ -49,6 +49,8 @@
 #include <QHostInfo>
 #include <QNetworkInterface>
 #include <QProcess>
+#include <QTemporaryFile>
+#include "PsQuote.h"
 #include <QClipboard>
 #include <QGuiApplication>
 #include <QPlainTextEdit>
@@ -982,9 +984,9 @@ void MainWindow::showManualNetworkDialog() {
                         }
                         stepsView->appendPlainText(extraText);
                         pushBtn->setEnabled(true);
-                    });
-            });
-            });
+                    }, pushBtn);   // contexte : enfant du dialogue, meurt avec lui
+            }, pushBtn);
+            }, &dlg);
     });
 
 #ifdef Q_OS_WIN
@@ -1002,7 +1004,7 @@ void MainWindow::showManualNetworkDialog() {
             return;
         }
         // Échapper les apostrophes pour PowerShell (doublage).
-        const auto psq = [](QString s) { return s.replace(QLatin1Char('\''), QStringLiteral("''")); };
+        const auto psq = [](const QString& v) { return psQuote(v); };
         // Source qualifiable : partage en écriture (Change) + NTFS Modify pour le compte,
         // afin que morfPhoto puisse écrire le sidecar de contexte. Sinon lecture seule.
         const bool writable = writableChk->isChecked();
@@ -1027,21 +1029,27 @@ void MainWindow::showManualNetworkDialog() {
             "%7"
             "Write-Host 'Partage pret'\n")
             .arg(psq(share), psq(localRoot), psq(userShown), accessRight, newAccessArg, shareDesc, ntfsLine);
-        const QString scriptPath = QDir(QDir::tempPath()).filePath(QStringLiteral("photohub-share.ps1"));
-        QFile f(scriptPath);
-        if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        // Fichier temporaire à nom ALÉATOIRE créé en exclusivité (droits propriétaire
+        // seul) : un nom fixe dans %TEMP% laisserait un autre processus le remplacer
+        // avant l'élévation UAC, et le script s'exécuterait alors en administrateur.
+        // Le script s'efface lui-même (première ligne), d'où autoRemove=false.
+        QTemporaryFile f(QDir(QDir::tempPath()).filePath(QStringLiteral("photohub-share-XXXXXX.ps1")));
+        f.setAutoRemove(false);
+        if (!f.open()) {
             QMessageBox::warning(&dlg, QStringLiteral("Assistant d'accès réseau"),
                 QStringLiteral("Impossible d'écrire le script temporaire."));
             return;
         }
-        f.write(script.toUtf8());
+        const QString scriptPath = f.fileName();
+        f.write(QByteArrayLiteral("Remove-Item -LiteralPath $PSCommandPath -Force "
+                                  "-ErrorAction SilentlyContinue\n") + script.toUtf8());
         f.close();
         // Lance une élévation UAC : PowerShell rejoue le script en administrateur.
         const bool ok = QProcess::startDetached(QStringLiteral("powershell"), {
             QStringLiteral("-NoProfile"), QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
             QStringLiteral("-Command"),
             QStringLiteral("Start-Process powershell -Verb RunAs -ArgumentList "
-                           "'-NoProfile','-ExecutionPolicy','Bypass','-File','%1'").arg(scriptPath)});
+                           "'-NoProfile','-ExecutionPolicy','Bypass','-File','\"%1\"'").arg(psQuote(scriptPath))});
         if (ok)
             QMessageBox::information(&dlg, QStringLiteral("Assistant d'accès réseau"),
                 QStringLiteral("Une fenêtre d'autorisation (UAC) va s'ouvrir pour créer le "

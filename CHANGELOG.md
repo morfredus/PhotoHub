@@ -3,6 +3,27 @@
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et du [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [0.18.2] - 2026-11-07
+
+### Fixed
+
+- Network callbacks no longer outlive the dialog that issued them: `MorfPhotoClient` calls accept an optional context object (guarded by `QPointer`), used by the context dialog and the network access assistant; `~ContextDialog` invalidates pending preview responses.
+- Polling in `reindexAndWait` and `confirmSourceRoot` is now a chained single-shot with one request in flight: no more `stop()` on a deleted timer and no double callback.
+
+### Security
+
+- The elevated PowerShell share script is written with `QTemporaryFile` (random name, owner-only) instead of a fixed file name in the temp folder, deletes itself, and its path is quoted (apostrophes doubled).
+
+### Added
+
+- ctest target `ph_test_pure` for the PowerShell quoting helper.
+
+## [0.18.1] - 2026-11-07
+
+### Changed
+
+- Resync the vendored morfUpdate core to 0.9.0: loopback health URL parsed with `QUrl`, `Host` and `Origin` checks on the local API, downgrade refused unless explicitly allowed, subprocess timeouts and a minimal environment, archives with links refused. Update checks are unchanged.
+
 ## [0.18.0] - 2026-11-02
 
 ### Changed

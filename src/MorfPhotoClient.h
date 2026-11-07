@@ -52,7 +52,8 @@ public:
     // terminee). `err` porte last_error eventuel en cas de succes, ou la cause d'echec.
     // Utile a l'ecran Contextes : reindexer puis rafraichir la liste sans quitter.
     void reindexAndWait(const QString& mode,
-                        std::function<void(bool ok, const QString& err)> cb);
+                        std::function<void(bool ok, const QString& err)> cb,
+                        const QObject* ctx = nullptr);
 
     // Envoie une source SMB à monter côté serveur. Une machine = un hostname =
     // un point de montage /mnt/photos_<slug>. Le mot de passe ne transite qu'une
@@ -61,19 +62,22 @@ public:
     // archive en lecture seule. `cb` reçoit le rapport d'étapes (succès ou échec).
     void pushSource(const QString& host, const QString& share, const QString& username,
                     const QString& password, const QString& hostname, bool writable,
-                    std::function<void(bool ok, const QJsonObject& report)> cb = {});
+                    std::function<void(bool ok, const QJsonObject& report)> cb = {},
+                    const QObject* ctx = nullptr);
 
     // Sources SMB connues du serveur (hostname, host, mounted, reachable). Liste vide si
     // le serveur ne repond pas : l'appelant n'en deduit alors aucune panne de source.
     void fetchSources(std::function<void(const QJsonArray& items)> cb);
 
     // Controle le helper privilegie cote serveur avant d'envoyer identifiants.
-    void checkSourcesReady(std::function<void(bool ok, const QJsonObject& report)> cb);
+    void checkSourcesReady(std::function<void(bool ok, const QJsonObject& report)> cb,
+                           const QObject* ctx = nullptr);
 
     // Après un envoi : attend le retour de morfPhoto (si redémarrage) puis
     // vérifie GET /status et GET /api/v1/roots pour la racine attendue.
     void confirmSourceRoot(const QString& mountpoint, bool waitRestart,
-                           std::function<void(bool ok, const QJsonObject& extra)> cb);
+                           std::function<void(bool ok, const QJsonObject& extra)> cb,
+                           const QObject* ctx = nullptr);
 
     // Purge DEFINITIVE (irreversible) selon une portee : scope = "folder" (value =
     // id), "year" (value = annee), "camera" (value = nom), "all" (value ignoree).
@@ -85,19 +89,23 @@ public:
     // --- Contexte photographique par dossier (morfphoto-context/2) ---
     // Liste les repertoires + leur contexte (ecran de qualification). `status` vide =
     // tous ; sinon "qualified" | "unqualified" | "invalid".
-    void fetchContexts(const QString& status, std::function<void(const QJsonArray&)> cb);
+    void fetchContexts(const QString& status, std::function<void(const QJsonArray&)> cb,
+                       const QObject* ctx = nullptr);
     // Ecrit `.morfphoto.json` d'un repertoire (morfPhoto seul ecrivain). `context` et
     // `subject` sont obligatoires (contrat V2). `cb` recoit le succes, le contexte
     // stocke et un message d'erreur eventuel.
     void putContext(const QString& directory, const QString& context, const QString& subject,
                     const QString& motif, const QString& description,
-                    std::function<void(bool ok, const QJsonObject& stored, const QString& err)> cb);
+                    std::function<void(bool ok, const QJsonObject& stored, const QString& err)> cb,
+                    const QObject* ctx = nullptr);
 
     // --- Apercu (les photos restent souveraines chez morfPhoto : PhotoHub ne lit
     // jamais les fichiers, il demande un echantillon de chemins puis une vignette JPEG) ---
     void fetchDirectorySample(const QString& directory, int limit,
-                              std::function<void(const QStringList& paths)> cb);
-    void fetchThumbnail(const QString& path, std::function<void(const QByteArray& jpeg)> cb);
+                              std::function<void(const QStringList& paths)> cb,
+                              const QObject* ctx = nullptr);
+    void fetchThumbnail(const QString& path, std::function<void(const QByteArray& jpeg)> cb,
+                        const QObject* ctx = nullptr);
 
 signals:
     void summaryReady(const QJsonObject& summary);
@@ -109,8 +117,14 @@ signals:
 
 private:
     using Handler = std::function<void(int, const QJsonDocument&)>;
+    // `ctx` : objet dont depend le rappel (dialogue, widget...). S'il est detruit avant la
+    // reponse, le rappel n'est plus appele : ses captures (this, widgets) seraient pendantes.
     void send(const QByteArray& verb, const QString& path, const QByteArray& body, Handler handler,
-              int timeoutMs = 8000, bool quiet = false);
+              int timeoutMs = 8000, bool quiet = false, const QObject* ctx = nullptr);
+    // Sonde periodique a UNE seule requete en vol : `probe` lance une requete et appelle
+    // next(true) pour s'arreter, next(false) pour re-sonder apres `intervalMs`. Si le
+    // contexte de la requete meurt, next n'est jamais appele et la chaine s'eteint.
+    void poll(int intervalMs, std::function<void(std::function<void(bool)> next)> probe);
 
     QNetworkAccessManager* m_net;
     QString                m_base;

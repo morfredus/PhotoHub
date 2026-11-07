@@ -67,6 +67,12 @@ ContextDialog::ContextDialog(MorfPhotoClient* client, QWidget* parent)
     reload();
 }
 
+ContextDialog::~ContextDialog() {
+    // Invalider les reponses d'apercu encore en vol : leurs rappels toucheraient la
+    // grille et les vignettes en cours de destruction.
+    ++m_previewGen;
+}
+
 void ContextDialog::buildUi() {
     auto* root = new QVBoxLayout(this);
     root->setContentsMargins(14, 14, 14, 14);
@@ -221,7 +227,7 @@ void ContextDialog::reload() {
     m_client->fetchContexts(filterStatus(), [this](const QJsonArray& items) {
         fillTable(items);
         setMessage(QStringLiteral("%1 journée(s).").arg(items.size()));
-    });
+    }, this);
 }
 
 // Indexation incrémentale déclenchée depuis l'écran, puis rechargement automatique.
@@ -244,7 +250,7 @@ void ContextDialog::reindex() {
         // message (« N journée(s). ») à l'arrivée ; les avertissements éventuels d'une
         // journée restent visibles dans l'info-bulle de sa colonne Statut.
         reload();
-    });
+    }, this);
 }
 
 void ContextDialog::fillTable(const QJsonArray& items) {
@@ -363,6 +369,7 @@ void ContextDialog::populateEditor(const QJsonObject& row) {
 
 // Vide le panneau d'aperçu (supprime les vignettes de la grille).
 void ContextDialog::clearPreview() {
+    ++m_previewGen;   // toute reponse d'apercu en vol devient perimee
     if (!m_previewGrid)
         return;
     QLayoutItem* it = nullptr;
@@ -416,9 +423,9 @@ void ContextDialog::loadPreview(const QString& directory) {
                     150, 112, Qt::KeepAspectRatio, Qt::SmoothTransformation);
                 holder->setText(QString());
                 holder->setPixmap(pm);
-            });
+            }, this);
         }
-    });
+    }, this);
 }
 
 void ContextDialog::save() {
@@ -462,7 +469,7 @@ void ContextDialog::save() {
             if (r2 >= 0)
                 m_table->selectRow(r2);
             goRelative(1);
-        });
+        }, this);
 }
 
 void ContextDialog::refreshRowCells(int row) {
