@@ -43,6 +43,24 @@ foreach ($f in 'LICENSE','README.md','README.fr.md','CHANGELOG.md','VERSION') {
     if (Test-Path $src) { Copy-Item $src $dist }
 }
 
+# Installer (Inno Setup 6), built from the same staged folder. Skipped with a warning when
+# ISCC.exe is not installed: the ZIP is still produced.
+if ($Version -match '^(\d+)\.(\d+)\.(\d+)') { $versionNum = "$($Matches[1]).$($Matches[2]).$($Matches[3]).0" }
+else { throw "Version '$Version' is not X.Y.Z." }
+$iscc = @(
+    (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source,
+    "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+    "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+    "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+if ($iscc) {
+    & $iscc "/DAppVersion=$Version" "/DAppVersionNum=$versionNum" "/DStageDir=$dist" `
+        "/O$(Join-Path $root 'dist')" (Join-Path $root "installer\photohub.iss")
+    if ($LASTEXITCODE -ne 0) { throw "ISCC failed." }
+} else {
+    Write-Warning "Inno Setup 6 not found: installer not built (the ZIP still is)."
+}
+
 $zip = Join-Path $root "dist\$name.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }
 Compress-Archive -Path (Join-Path $dist '*') -DestinationPath $zip
