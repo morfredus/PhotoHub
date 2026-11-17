@@ -95,7 +95,9 @@ if(WIN32)
         HINTS "${Qt6_DIR}/../../../bin" "$ENV{QT_ROOT}/bin")
     if(WINDEPLOYQT_EXE)
         add_custom_command(TARGET PhotoHub POST_BUILD
-            COMMAND "${WINDEPLOYQT_EXE}" --no-translations --compiler-runtime "$<TARGET_FILE:PhotoHub>"
+            # --force : sans lui, windeployqt garde une DLL deja presente dont la date est plus recente,
+            # meme si elle vient d'un autre environnement MSYS2 (mingw64 / ucrt64) que le compilateur.
+            COMMAND "${WINDEPLOYQT_EXE}" --no-translations --compiler-runtime --force "$<TARGET_FILE:PhotoHub>"
             COMMENT "Deploiement des DLL Qt a cote de l'executable")
     endif()
     # 2) MinGW : windeployqt ne copie QUE les DLL Qt. Ce script complete avec les
@@ -125,6 +127,7 @@ if(WIN32)
             find_program(_photohub_cxx NAMES "${CMAKE_CXX_COMPILER}" g++.exe)
         endif()
         get_filename_component(PHOTOHUB_COMPILER_BIN "${_photohub_cxx}" DIRECTORY)
+        photohub_msys_path("${PHOTOHUB_COMPILER_BIN}" PHOTOHUB_TOOLCHAIN_BIN)
         get_filename_component(PHOTOHUB_MINGW_ROOT "${PHOTOHUB_COMPILER_BIN}" DIRECTORY)
         get_filename_component(PHOTOHUB_MSYS_ROOT "${PHOTOHUB_MINGW_ROOT}" DIRECTORY)
         find_program(PHOTOHUB_MSYS_BASH bash.exe
@@ -138,7 +141,7 @@ if(WIN32)
                 COMMAND "${CMAKE_COMMAND}" -E env
                     "PATH=${PHOTOHUB_MSYS_ROOT}/usr/bin;${PHOTOHUB_COMPILER_BIN}"
                     --
-                    "${PHOTOHUB_MSYS_BASH}" "${PHOTOHUB_DEPLOY_SCRIPT}" "${PHOTOHUB_TARGET_DIR}"
+                    "${PHOTOHUB_MSYS_BASH}" "${PHOTOHUB_DEPLOY_SCRIPT}" "${PHOTOHUB_TARGET_DIR}" "${PHOTOHUB_TOOLCHAIN_BIN}"
                 VERBATIM
                 COMMENT "Copie des DLL MinGW a cote de l'executable")
         else()

@@ -3,6 +3,12 @@
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et du [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [0.19.2] - 2026-11-18
+
+### Fixed
+
+- Windows build: the DLLs deployed next to the executable now always match the compiler in use. `deploy-mingw.sh` receives the compiler's `bin` folder and replaces any DLL already present that exists there and differs; `windeployqt` runs with `--force`. Both used to keep a DLL whose timestamp was newer, so a build folder compiled with one MSYS2 environment and then another kept the runtime DLLs of the first (a `libstdc++-6.dll` from `ucrt64` next to an executable built with `mingw64`: "entry point not found" at start).
+
 ## [0.19.1] - 2026-11-17
 
 ### Changed
