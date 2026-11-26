@@ -3,6 +3,12 @@
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et du [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [0.20.1] - 2026-11-26
+
+### Fixed
+
+- Vendored morfUpdate resynchronised to 0.10.1 (version file only; no behaviour change).
+
 ## [0.20.0] - 2026-11-26
 
 ### Added
