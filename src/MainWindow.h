@@ -15,6 +15,7 @@
 class QComboBox;
 class QLabel;
 class QTableWidget;
+class QGroupBox;
 class QPushButton;
 class QProgressBar;
 class QTimer;
@@ -55,6 +56,8 @@ private slots:
     void onIndexStatus(const QJsonObject& status);
     void onActionResult(bool ok, const QString& message);
     void onFailed(const QString& message);
+    void updateLibraryPanel();               // panneau « Sidecars » (bibliotheque de morfPhoto)
+    void onAuthRequired(bool hadKey);        // 401 : demander (ou redemander) la cle d'API
     void onRoots(const QStringList& roots);
 
     void addFolderClicked();
@@ -67,6 +70,7 @@ private slots:
     void openAnalyticsClicked();
     void showContextDialog();                // Contextes photographiques (qualification)
     void showMappingsDialog();               // Fichier > Mappage de chemins...
+    void showApiKeyDialog(bool refused);     // Fichier > Cle d'API de ce morfPhoto...
     void checkSourcesHealth();               // bandeau si une source SMB est injoignable
     void showManualNetworkDialog();          // commandes a copier (mode avance)
     void showNetworkAccessDialog();          // Fichier > Assistant d'accès réseau...
@@ -106,6 +110,18 @@ private:
 
     BeaconDiscovery* m_discovery;
     MorfPhotoClient* m_client;
+    // Panneau « Sidecars » : alimente par le bloc `library` de /index/status (gratuit, a
+    // chaque rafraichissement) et par le rapport /library/sidecars (une fois par selection
+    // de source et a la fin de chaque indexation).
+    QGroupBox*    m_libBox = nullptr;
+    QLabel*       m_libSummary = nullptr;
+    QTableWidget* m_libTable = nullptr;
+    QLabel*       m_libFooter = nullptr;
+    QJsonObject   m_libStatus;     // dernier bloc `library` recu (vide = morfPhoto sans bibliotheque)
+    bool          m_libHasBlock = false;
+    QJsonObject   m_libDetail;     // dernier rapport /library/sidecars
+    bool          m_wasIndexing = false;
+    bool             m_authPrompted = false;   // une seule demande de cle par selection de source
     QTimer*          m_refresh;
 
     QComboBox*    m_sourceCombo;

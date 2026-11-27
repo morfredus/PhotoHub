@@ -55,11 +55,13 @@ add_executable(PhotoHub WIN32
     src/MainWindow.cpp
     src/BeaconDiscovery.cpp
     src/MorfPhotoClient.cpp
+    src/ApiKeyStore.cpp
     src/ContextDialog.cpp
     src/NetworkAccessWizard.cpp
     src/MainWindow.h
     src/BeaconDiscovery.h
     src/MorfPhotoClient.h
+    src/ApiKeyStore.h
     src/PsQuote.h
     src/ContextDialog.h
     src/NetworkAccessWizard.h
@@ -80,7 +82,7 @@ target_link_libraries(ph_test_pure PRIVATE Qt6::Core)
 add_test(NAME ph_test_pure COMMAND ph_test_pure)
 
 if(WIN32)
-    target_link_libraries(PhotoHub PRIVATE ws2_32)   # sockets UDP (decouverte LAN)
+    target_link_libraries(PhotoHub PRIVATE ws2_32 crypt32)   # sockets UDP (decouverte LAN) + DPAPI (cle d'API)
 endif()
 if(MSVC)
     target_compile_options(PhotoHub PRIVATE /utf-8)

@@ -3,6 +3,34 @@
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et du [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [0.22.2] - 2026-11-27
+
+### Changed
+
+- The Sidecars panel names the new `lightcraft` provider of morfPhoto 0.23.0 "Lightcraft (drapeau)".
+
+## [0.22.1] - 2026-11-27
+
+### Changed
+
+- The Sidecars panel names the new `dxo` provider of morfPhoto 0.22.0 "DxO PhotoLab".
+
+## [0.22.0] - 2026-11-27
+
+### Added
+
+- "Sidecars" panel in the main window, fed by the photo library of morfPhoto 0.19.0 (`library` block of the index status, refreshed with the rest, and the `/library/sidecars` report asked once per selected source and at the end of each indexing pass). It lists the software that left sidecars (darktable, generic XMP, XMP embedded in the image) with their photo counts, the photos without a sidecar and the unreadable sidecars. It does no analysis: exploring ratings, labels and keywords stays with morfAnalytics. When the library is off the panel explains how to turn it on; a morfPhoto without the `library` block hides it.
+
+### Changed
+
+- The main window opens a little taller (780 px) to make room for the panel.
+
+## [0.21.0] - 2026-11-27
+
+### Added
+
+- API key for a morfPhoto that requires one (morfPhoto 0.18.0, `api_key`). PhotoHub sends it as `Authorization: Bearer` on every API request, including thumbnails. On a `401` it asks for the key once per selected source; **File > morfPhoto API key...** changes or forgets it. The key is stored per server, encrypted with Windows DPAPI (readable only by the current Windows account, never in clear text in the registry). On other systems it falls back to the user's preferences in clear text. Without a key nothing changes.
+
 ## [0.20.1] - 2026-11-26
 
 ### Fixed

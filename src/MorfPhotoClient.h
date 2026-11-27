@@ -13,6 +13,8 @@
 #include <QVariant>
 #include <functional>
 
+class QNetworkRequest;
+
 class QNetworkAccessManager;
 
 // -----------------------------------------------------------------------------
@@ -32,6 +34,10 @@ public:
 
     void setBaseUrl(const QString& url);
     QString baseUrl() const { return m_base; }
+    // Cle d'API du morfPhoto selectionne (vide = serveur ouvert). Envoyee en
+    // `Authorization: Bearer` sur chaque requete /api/.
+    void setApiKey(const QString& key) { m_apiKey = key; }
+    bool hasApiKey() const { return !m_apiKey.isEmpty(); }
     bool hasBase() const { return !m_base.isEmpty(); }
 
     void refreshAll();                                 // resume + dossiers + etat d'index
@@ -67,6 +73,10 @@ public:
 
     // Sources SMB connues du serveur (hostname, host, mounted, reachable). Liste vide si
     // le serveur ne repond pas : l'appelant n'en deduit alors aucune panne de source.
+    // Rapport de la bibliotheque (GET /api/v1/library/sidecars, morfPhoto 0.19.0+) : photos
+    // avec et sans sidecar, sidecars illisibles. Objet vide si la bibliotheque est eteinte ou
+    // le morfPhoto trop ancien : ce n'est jamais une erreur a montrer.
+    void fetchLibrarySidecars(std::function<void(const QJsonObject&)> cb, const QObject* ctx = nullptr);
     void fetchSources(std::function<void(const QJsonArray& items)> cb);
 
     // Controle le helper privilegie cote serveur avant d'envoyer identifiants.
@@ -114,6 +124,7 @@ signals:
     void indexStatusReady(const QJsonObject& status);
     void actionResult(bool ok, const QString& message);  // retour d'une action
     void failed(const QString& message);                 // erreur reseau/HTTP
+    void authRequired(bool hadKey);                      // 401 : cle absente (false) ou refusee (true)
 
 private:
     using Handler = std::function<void(int, const QJsonDocument&)>;
@@ -128,6 +139,9 @@ private:
 
     QNetworkAccessManager* m_net;
     QString                m_base;
+    QString                m_apiKey;
+
+    void applyAuth(QNetworkRequest& req) const;
 };
 
 } // namespace photohub

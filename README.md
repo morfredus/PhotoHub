@@ -2,7 +2,7 @@
 
 *Read in another language: **English** (this document) · [Français](README.fr.md).*
 
-[![Version](https://img.shields.io/badge/version-0.20.1-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.22.2-blue)](CHANGELOG.md)
 ![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus)
 ![Qt](https://img.shields.io/badge/Qt-6-41CD52?logo=qt)
 ![Build](https://img.shields.io/badge/CMake-3.21+-064F8C?logo=cmake)
@@ -105,6 +105,14 @@ breakdown (known, added, errors) comes back when the bar disappears, as a summar
 - **Network access assistant** (`File > Network access assistant…`): creates the
   read-only Windows share and generates the Pi mount commands (see the dedicated
   section above).
+- **Sidecars panel**: when morfPhoto reads the photo library (0.19.0 and later, option
+  `sidecars.providers`), a panel lists which programs left sidecars and on how many photos
+  (darktable, generic XMP, XMP embedded in the image), plus the photos without a sidecar and the
+  unreadable sidecars. It only shows; exploring ratings, labels and keywords is the job of
+  morfAnalytics. Without the library the panel explains how to turn it on, and an older morfPhoto
+  hides it.
+- **API key**: when a morfPhoto requires one (`api_key`), PhotoHub asks for it once
+  and keeps it encrypted on the Windows account (`File > morfPhoto API key...`).
 - **Optional enrichment**: if a service announces the `photo_analytics` capability
   (morfAnalytics), a button opens its advanced Photo analysis. No hard dependency:
   PhotoHub works fully on its own.

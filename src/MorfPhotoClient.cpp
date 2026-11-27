@@ -34,6 +34,12 @@ QString errorText(const QJsonDocument& doc, int status) {
 MorfPhotoClient::MorfPhotoClient(QObject* parent)
     : QObject(parent), m_net(new QNetworkAccessManager(this)) {}
 
+void MorfPhotoClient::applyAuth(QNetworkRequest& req) const {
+    // Seules les routes metier sont protegees cote serveur ; on n'envoie la cle qu'a elles.
+    if (!m_apiKey.isEmpty() && req.url().path().startsWith(QLatin1String("/api/")))
+        req.setRawHeader("Authorization", "Bearer " + m_apiKey.toUtf8());
+}
+
 void MorfPhotoClient::setBaseUrl(const QString& url) {
     m_base = url;
     while (m_base.endsWith('/'))
@@ -50,6 +56,7 @@ void MorfPhotoClient::send(const QByteArray& verb, const QString& path,
     }
     QNetworkRequest req{QUrl(m_base + path)};
     req.setTransferTimeout(timeoutMs);
+    applyAuth(req);
     if (!body.isEmpty())
         req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
 
@@ -62,6 +69,8 @@ void MorfPhotoClient::send(const QByteArray& verb, const QString& path,
             return;   // le demandeur n'existe plus : ne rien rappeler
         const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+        if (status == 401)
+            emit authRequired(!m_apiKey.isEmpty());   // cle absente ou refusee : MainWindow la demande
         if (reply->error() != QNetworkReply::NoError && status == 0) {
             if (!quiet)
                 emit failed(reply->errorString());
@@ -104,6 +113,12 @@ void MorfPhotoClient::addFolder(const QString& path, bool removable, const QStri
         if (s == 201) { emit actionResult(true, QStringLiteral("Dossier ajouté.")); refreshAll(); }
         else          emit actionResult(false, errorText(d, s));
     });
+}
+
+void MorfPhotoClient::fetchLibrarySidecars(std::function<void(const QJsonObject&)> cb, const QObject* ctx) {
+    send("GET", QStringLiteral("/api/v1/library/sidecars"), {}, [cb](int s, const QJsonDocument& d) {
+        if (cb) cb(s == 200 ? d.object() : QJsonObject{});
+    }, 15000, true, ctx);
 }
 
 void MorfPhotoClient::fetchSources(std::function<void(const QJsonArray&)> cb) {
@@ -411,6 +426,7 @@ void MorfPhotoClient::fetchThumbnail(const QString& path,
         + QString::fromUtf8(QUrl::toPercentEncoding(path));
     QNetworkRequest req{QUrl(url)};
     req.setTransferTimeout(15000);
+    applyAuth(req);
     QNetworkReply* reply = m_net->get(req);
     const QPointer<const QObject> guard(ctx);
     const bool hasCtx = (ctx != nullptr);

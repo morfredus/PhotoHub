@@ -44,6 +44,9 @@
 #include <QUrl>
 #include <QDir>
 #include <QSettings>
+#include <QInputDialog>
+#include <QLineEdit>
+#include "ApiKeyStore.h"
 #include <QStandardPaths>
 #include <QDateTime>
 #include <QHostInfo>
@@ -104,7 +107,7 @@ MainWindow::MainWindow(QWidget* parent)
       m_client(new MorfPhotoClient(this)),
       m_refresh(new QTimer(this)) {
     setWindowTitle(QStringLiteral("PhotoHub %1").arg(QStringLiteral(PHOTOHUB_VERSION)));
-    resize(820, 640);
+    resize(820, 780);
     buildMenu();
     buildUi();
 
@@ -117,6 +120,7 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_client, &MorfPhotoClient::indexStatusReady, this, &MainWindow::onIndexStatus);
     connect(m_client, &MorfPhotoClient::actionResult, this, &MainWindow::onActionResult);
     connect(m_client, &MorfPhotoClient::failed, this, &MainWindow::onFailed);
+    connect(m_client, &MorfPhotoClient::authRequired, this, &MainWindow::onAuthRequired);
 
     // Vérification de mise à jour au démarrage, silencieuse (comme SiteWatch /
     // ComponentHub) : laisser l'interface s'afficher d'abord.
@@ -206,6 +210,30 @@ void MainWindow::buildUi() {
     statsRow->addStretch(1);
     root->addWidget(stats);
 
+    // --- Sidecars (bibliotheque de morfPhoto) : montre ce que les logiciels photo ont
+    // laisse a cote des images, sans rien analyser. L'exploration est le travail de
+    // morfAnalytics. Masque tant que le morfPhoto ne parle pas de bibliotheque. ---
+    m_libBox = new QGroupBox(QStringLiteral("Sidecars"));
+    auto* libLayout = new QVBoxLayout(m_libBox);
+    m_libSummary = new QLabel;
+    m_libSummary->setWordWrap(true);
+    libLayout->addWidget(m_libSummary);
+    m_libTable = new QTableWidget(0, 2);
+    m_libTable->setHorizontalHeaderLabels({QStringLiteral("Logiciel"), QStringLiteral("Photos")});
+    m_libTable->horizontalHeader()->setStretchLastSection(false);
+    m_libTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    m_libTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    m_libTable->verticalHeader()->setVisible(false);
+    m_libTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_libTable->setSelectionMode(QAbstractItemView::NoSelection);
+    libLayout->addWidget(m_libTable);
+    m_libFooter = new QLabel;
+    m_libFooter->setWordWrap(true);
+    m_libFooter->setStyleSheet(QStringLiteral("color:#99a1ad"));
+    libLayout->addWidget(m_libFooter);
+    m_libBox->setVisible(false);
+    root->addWidget(m_libBox);
+
     // --- Dossiers ---
     auto* folders = new QGroupBox(QStringLiteral("Dossiers surveillés"));
     auto* fLayout = new QVBoxLayout(folders);
@@ -285,6 +313,8 @@ void MainWindow::buildMenu() {
     connect(netAssist, &QAction::triggered, this, &MainWindow::showNetworkAccessDialog);
     QAction* mappings = fichier->addAction(QStringLiteral("Mappage de chemins…"));
     connect(mappings, &QAction::triggered, this, &MainWindow::showMappingsDialog);
+    QAction* apiKey = fichier->addAction(QStringLiteral("Clé d'API de ce morfPhoto…"));
+    connect(apiKey, &QAction::triggered, this, [this] { showApiKeyDialog(false); });
     m_removedAction = fichier->addAction(QStringLiteral("Dossiers retirés…"));
     m_removedAction->setEnabled(false);   // activé dès qu'un dossier retiré existe
     connect(m_removedAction, &QAction::triggered, this, &MainWindow::showRemovedFoldersDialog);
@@ -1137,6 +1167,16 @@ void MainWindow::onSourceSelected(int index) {
     if (index < 0) return;
     const QString url = m_sourceCombo->itemData(index).toString();
     m_client->setBaseUrl(url);
+    m_client->setApiKey(ApiKeyStore::load(url));   // vide si ce serveur n'exige pas de cle
+    m_authPrompted = false;
+    m_libDetail = QJsonObject();
+    m_libStatus = QJsonObject();
+    m_libHasBlock = false;
+    updateLibraryPanel();
+    m_client->fetchLibrarySidecars([this](const QJsonObject& r) {
+        m_libDetail = r;
+        updateLibraryPanel();
+    }, this);
     m_connLabel->setText(QStringLiteral("Connecté à %1").arg(m_sourceCombo->itemText(index)));
     m_contextsBtn->setEnabled(true);
     m_client->refreshAll();
@@ -1223,8 +1263,77 @@ void MainWindow::onFolders(const QJsonArray& folders) {
     }
 }
 
+void MainWindow::updateLibraryPanel() {
+    // morfPhoto sans bloc `library` (version anterieure a 0.19.0) : rien a montrer.
+    if (!m_libHasBlock) {
+        m_libBox->setVisible(false);
+        return;
+    }
+    m_libBox->setVisible(true);
+    if (!m_libStatus.value(QStringLiteral("enabled")).toBool()) {
+        m_libSummary->setText(QStringLiteral(
+            "Bibliothèque éteinte. Pour lire la note, les étiquettes et les mots-clés posés par darktable, "
+            "Lightroom, digiKam ou un autre logiciel, nommer au moins un fournisseur dans le champ "
+            "« sidecars.providers » de la configuration de morfPhoto."));
+        m_libTable->setVisible(false);
+        m_libFooter->setVisible(false);
+        return;
+    }
+    // Noms lisibles des fournisseurs (l'identifiant de morfPhoto reste la cle).
+    static const QHash<QString, QString> kNames{
+        {QStringLiteral("darktable"), QStringLiteral("darktable")},
+        {QStringLiteral("xmp"), QStringLiteral("XMP générique (Lightroom, digiKam, Bridge…)")},
+        {QStringLiteral("dxo"), QStringLiteral("DxO PhotoLab")},
+        {QStringLiteral("lightcraft"), QStringLiteral("Lightcraft (drapeau)")},
+        {QStringLiteral("file"), QStringLiteral("XMP embarqué dans l'image")},
+    };
+    const QJsonObject bySource = m_libStatus.value(QStringLiteral("by_source")).toObject();
+    const int withSidecar = m_libStatus.value(QStringLiteral("photos_with_sidecar")).toInt();
+    m_libSummary->setText(withSidecar > 0
+        ? QStringLiteral("%1 photo%2 portent un sidecar.").arg(QLocale().toString(withSidecar))
+              .arg(withSidecar > 1 ? QStringLiteral("s") : QString())
+        : QStringLiteral("Aucun sidecar détecté pour l'instant (lancer une indexation après avoir activé la bibliothèque)."));
+    const QJsonArray providers = m_libStatus.value(QStringLiteral("providers")).toArray();
+    m_libTable->setVisible(true);
+    m_libTable->setRowCount(providers.size());
+    for (int i = 0; i < providers.size(); ++i) {
+        const QString id = providers[i].toString();
+        m_libTable->setItem(i, 0, new QTableWidgetItem(kNames.value(id, id)));
+        auto* count = new QTableWidgetItem(QLocale().toString(bySource.value(id).toInt()));
+        count->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        m_libTable->setItem(i, 1, count);
+    }
+    // Hauteur au plus juste : la table ne doit pas pousser les dossiers hors de la fenetre.
+    const int rowH = m_libTable->verticalHeader()->defaultSectionSize();
+    m_libTable->setFixedHeight(m_libTable->horizontalHeader()->height() + rowH * qMax(1, providers.size())
+                               + 2 * m_libTable->frameWidth() + 4);
+
+    // Detail du rapport : photos sans sidecar, sidecars illisibles.
+    QStringList foot;
+    if (m_libDetail.contains(QStringLiteral("without_sidecar")))
+        foot << QStringLiteral("%1 sans sidecar").arg(QLocale().toString(m_libDetail.value(QStringLiteral("without_sidecar")).toInt()));
+    const int unreadable = m_libDetail.value(QStringLiteral("unreadable")).toInt();
+    if (unreadable > 0)
+        foot << QStringLiteral("%1 sidecar%2 illisible%2").arg(unreadable).arg(unreadable > 1 ? QStringLiteral("s") : QString());
+    m_libFooter->setVisible(!foot.isEmpty());
+    m_libFooter->setText(foot.join(QStringLiteral("  ·  ")));
+    m_libFooter->setStyleSheet(unreadable > 0 ? QStringLiteral("color:#e0a030") : QStringLiteral("color:#99a1ad"));
+}
+
 void MainWindow::onIndexStatus(const QJsonObject& status) {
     const bool indexing = status.value(QStringLiteral("state")).toString() == QLatin1String("indexing");
+    // Bibliotheque : le bloc arrive a chaque rafraichissement ; le rapport detaille n'est
+    // redemande qu'a la fin d'une passe (c'est la qu'il change).
+    m_libHasBlock = status.contains(QStringLiteral("library"));
+    m_libStatus = status.value(QStringLiteral("library")).toObject();
+    updateLibraryPanel();
+    if (m_wasIndexing && !indexing && m_libStatus.value(QStringLiteral("enabled")).toBool()) {
+        m_client->fetchLibrarySidecars([this](const QJsonObject& r) {
+            m_libDetail = r;
+            updateLibraryPanel();
+        }, this);
+    }
+    m_wasIndexing = indexing;
     m_progress->setVisible(indexing);
     // Pendant une passe, interroger plus souvent : un gros dossier ne doit pas
     // laisser la barre figée 3 secondes d'affilée.
@@ -1318,6 +1427,40 @@ void MainWindow::onActionResult(bool ok, const QString& message) {
     statusBar()->showMessage(message, 5000);
     if (!ok)
         QMessageBox::warning(this, QStringLiteral("PhotoHub"), message);
+}
+
+void MainWindow::onAuthRequired(bool hadKey) {
+    m_connLabel->setText(hadKey
+        ? QStringLiteral("Clé d'API refusée par ce morfPhoto.")
+        : QStringLiteral("Ce morfPhoto exige une clé d'API."));
+    // Une seule fenetre par selection : plusieurs requetes en vol recevront ce 401
+    // en meme temps, la personne ne doit pas voir dix dialogues d'affilee.
+    if (m_authPrompted)
+        return;
+    m_authPrompted = true;
+    QTimer::singleShot(0, this, [this, hadKey] { showApiKeyDialog(hadKey); });
+}
+
+void MainWindow::showApiKeyDialog(bool refused) {
+    const QString url = m_client->baseUrl();
+    if (url.isEmpty()) {
+        QMessageBox::information(this, QStringLiteral("Clé d'API"),
+            QStringLiteral("Aucun morfPhoto n'est sélectionné."));
+        return;
+    }
+    const QString label = refused
+        ? QStringLiteral("La clé d'API est refusée par %1.\nSaisir la bonne clé (vide pour l'oublier) :").arg(url)
+        : QStringLiteral("Clé d'API de %1 (le champ « api_key » ou la variable MORFPHOTO_API_KEY du serveur).\n"
+                         "Laisser vide si le serveur n'en exige pas :").arg(url);
+    bool ok = false;
+    const QString key = QInputDialog::getText(this, QStringLiteral("Clé d'API"), label,
+                                              QLineEdit::Password, QString(), &ok).trimmed();
+    if (!ok)
+        return;
+    ApiKeyStore::save(url, key);
+    m_client->setApiKey(key);
+    m_authPrompted = false;      // un nouveau 401 pourra redemander
+    m_client->refreshAll();
 }
 
 void MainWindow::onFailed(const QString& message) {
